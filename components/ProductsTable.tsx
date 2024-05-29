@@ -2,11 +2,12 @@
 import { useEffect, useState } from "react";
 
 import ShopOrder from "@/types/ShopOrder";
-import { getShopOrders } from "@/actions/getShopOrders";
 import { TABLE_ITEMS_FETCH_COUNT } from "@/utils/constants";
 import { feedsDownload } from "@/actions/feedsDownload";
 import { checkOrder } from "@/actions/checkOrder";
 import { triggerOrdersSend } from "@/actions/triggerOrdersSend";
+import { getProducts } from "@/db/getProducts";
+import { formatDate } from "@/utils/formatDate";
 
 const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }) => {
     const [shopOrders, setShopOrders] = useState(initialShopOrders);
@@ -15,7 +16,7 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
 
     const refreshShopOrders = async () => {
         setLoading(true);
-        const shopOrdersAPI = await getShopOrders(TABLE_ITEMS_FETCH_COUNT, 0);
+        const shopOrdersAPI = await getProducts(TABLE_ITEMS_FETCH_COUNT, null);
         setShopOrders(shopOrdersAPI);
         setLoading(false);
     };
@@ -95,9 +96,9 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
                         </thead>
                         <tbody>
                             {shopOrders.map((order) => (
-                                <tr key={order.id}>
+                                <tr key={order.code + order.orderItemCode}>
                                     <th>{order.code}</th>
-                                    <td className="text-nowrap">{new Date(order.date).toISOString()}</td>
+                                    <td className="text-nowrap">{formatDate(order.date)}</td>
                                     <td>{order.orderItemCode}</td>
                                     <td>{order.orderItemName}</td>
                                     <td>{order.orderItemVariantName}</td>

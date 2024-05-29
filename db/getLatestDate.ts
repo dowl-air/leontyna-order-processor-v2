@@ -1,3 +1,4 @@
+"use server";
 import { collection, getDocs, limit, orderBy, query, Timestamp } from "firebase/firestore/lite"
 import { db } from "./init";
 

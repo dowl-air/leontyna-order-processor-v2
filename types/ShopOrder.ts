@@ -15,6 +15,7 @@ type ShopOrder = {
     AltumOrderID: string
     kontriStatusCode: number
     kontriStatusName: string
+    fID?: string
 }
 
 export default ShopOrder
