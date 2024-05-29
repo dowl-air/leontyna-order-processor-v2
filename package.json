@@ -9,9 +9,12 @@
         "lint": "next lint"
     },
     "dependencies": {
+        "csvtojson": "^2.0.10",
+        "firebase": "^10.12.2",
         "next": "14.2.2",
         "react": "^18",
         "react-dom": "^18",
+        "request": "^2.88.2",
         "soap": "^1.0.3"
     },
     "devDependencies": {

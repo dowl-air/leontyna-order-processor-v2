@@ -1,4 +1,3 @@
-import ShopOrder from '@/types/ShopOrder';
 import { createClient, BasicAuthSecurity, Client } from 'soap';
 
 const url = "https://api.kontri.pl:8866/KontriAPIservice.svc?wsdl";

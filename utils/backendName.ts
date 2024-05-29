@@ -1,1 +1,0 @@
-export const backendName = process.env.NODE_ENV === "production" ? "http://backend:3001" : "http://localhost:3001";

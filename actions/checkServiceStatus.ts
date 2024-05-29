@@ -17,3 +17,4 @@ export const checkServiceStatus = async (): Promise<CheckStatusResponse> => {
         return {CheckStatusResult: "Error checking service status."};
     }
 };
+

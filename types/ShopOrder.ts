@@ -1,7 +1,7 @@
 type ShopOrder = {
     id: string,
     code: string,
-    date: string,
+    date: Date,
     statusName: string,
     orderItemName: string,
     orderItemAmount: number,

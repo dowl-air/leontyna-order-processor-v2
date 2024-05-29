@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import ShopOrder from "@/types/ShopOrder";
 import { getShopOrders } from "@/actions/getShopOrders";
 import { TABLE_ITEMS_FETCH_COUNT } from "@/utils/constants";
-import { triggerFeedDownload } from "@/actions/triggerFeedDownload";
+import { feedsDownload } from "@/actions/feedsDownload";
 import { checkOrder } from "@/actions/checkOrder";
 import { triggerOrdersSend } from "@/actions/triggerOrdersSend";
 
@@ -22,7 +22,7 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
 
     const triggerFeedDown = async () => {
         setLoading(true);
-        const resp = await triggerFeedDownload("cz");
+        const resp = await feedsDownload();
         if (resp.message) {
             setMessages([...messages, resp.message]);
         }
