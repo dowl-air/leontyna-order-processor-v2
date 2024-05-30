@@ -1,5 +1,5 @@
 "use server";
-import { doc, setDoc } from "firebase/firestore/lite"
+import { doc, getDoc, setDoc } from "firebase/firestore/lite"
 import { db } from "./init"
 import ShopOrder from "@/types/ShopOrder";
 
@@ -12,5 +12,10 @@ export const addProduct = async (product: ShopOrder) => {
     productCopy.AltumOrderID = null;
 
     const ref = doc(db, "products", product.code + "_" + product.orderItemCode);
-    await setDoc(ref, productCopy, { merge: true});
-}
+
+    const docSnap = await getDoc(ref);
+
+    if (!docSnap.exists()) {
+        await setDoc(ref, productCopy, { merge: true });
+    }
+};
