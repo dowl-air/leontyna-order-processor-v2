@@ -7,7 +7,11 @@ const SEND_ORDER_URL = "http://34.75.56.113:8080/api/sendOrder"
 
 export const sendOrder = async (orderObject: Omit<KontriOrder, "products">) => {
     try {
-        const resp = await fetch(SEND_ORDER_URL, { method: "POST", body: JSON.stringify(orderObject) });
+        const resp = await fetch(SEND_ORDER_URL, { 
+            method: "POST", 
+            body: JSON.stringify(orderObject), 
+            headers: {"Content-Type": "application/json"} 
+        });
         return (await resp.json() as AddOrderResponse).result;
     }
     catch (error) {
