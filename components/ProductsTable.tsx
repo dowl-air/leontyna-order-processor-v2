@@ -130,7 +130,7 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
                                     <td>{order.orderItemCode}</td>
                                     <td>{order.orderItemName}</td>
                                     <td>
-                                        {/* <div className="flex flex-col">
+                                        <div className="flex flex-col">
                                             {order.orderItemVariantName.split(",").map((item) => {
                                                 return (
                                                     <div key={item} className="text-nowrap">
@@ -138,14 +138,14 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
                                                     </div>
                                                 );
                                             })}
-                                        </div> */}
+                                        </div>
                                     </td>
                                     <td>
                                         {order.orderItemAmount} {order.orderItemUnit}
                                     </td>
                                     <td>{order.AltumOrderID}</td>
                                     <td className={`text-center ${order.shortage && "text-error font-bold"}`}>{order.shortage}</td>
-                                    <td className="text-center">
+                                    {/* <td className="text-center">
                                         {order.kontriStatusCode === 100 && <div className="badge badge-success">{order.kontriStatusName}</div>}
                                         {order.kontriStatusCode === 90 && <div className="badge badge-warning">{order.kontriStatusName}</div>}
                                         {order.kontriStatusCode !== 100 && order.kontriStatusCode !== 90 && (
@@ -153,15 +153,15 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
                                         )}
                                     </td>
                                     <td>
-                                        {/*  {(order.kontriStatusCode === 100 || order.kontriStatusCode === 101) && (
+                                        {(order.kontriStatusCode === 100 || order.kontriStatusCode === 101) && (
                                             <button
                                                 className="btn btn-primary btn-xs text-nowrap"
                                                 onClick={() => checkOrderStatus(order.AltumOrderID)}
                                             >
                                                 Dotaz na stav
                                             </button>
-                                        )} */}
-                                    </td>
+                                        )}
+                                    </td> */}
                                 </tr>
                             ))}
                         </tbody>
