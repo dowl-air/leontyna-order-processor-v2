@@ -5,9 +5,9 @@ import ShopOrder from "@/types/ShopOrder";
 import { TABLE_ITEMS_FETCH_COUNT } from "@/utils/constants";
 import { feedsDownload } from "@/actions/feedsDownload";
 import { checkOrder } from "@/actions/checkOrder";
-/* import { sendOrders } from "@/actions/triggerOrdersSend"; */
+import { sendOrders } from "@/actions/triggerOrdersSend";
 import { getProducts } from "@/db/getProducts";
-/* import { formatDate, formatTime } from "@/utils/formatDate"; */
+import { formatDate, formatTime } from "@/utils/formatDate";
 /* import { OrderInfoModal } from "./OrderInfoModal";
 import { OrderResponseResult } from "@/types/api/CheckOrderResponse"; */
 
@@ -100,7 +100,7 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
                     </button>
                 </div>
             </div>
-            {/* <div className="overflow-x-auto max-h-[calc(100vh-72px-48px-8px)] w-full">
+            <div className="overflow-x-auto max-h-[calc(100vh-72px-48px-8px)] w-full">
                 {!loading ? (
                     <table className="table table-pin-rows">
                         <thead className="">
@@ -130,7 +130,7 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
                                     <td>{order.orderItemCode}</td>
                                     <td>{order.orderItemName}</td>
                                     <td>
-                                        <div className="flex flex-col">
+                                        {/* <div className="flex flex-col">
                                             {order.orderItemVariantName.split(",").map((item) => {
                                                 return (
                                                     <div key={item} className="text-nowrap">
@@ -138,7 +138,7 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
                                                     </div>
                                                 );
                                             })}
-                                        </div>
+                                        </div> */}
                                     </td>
                                     <td>
                                         {order.orderItemAmount} {order.orderItemUnit}
@@ -153,14 +153,14 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
                                         )}
                                     </td>
                                     <td>
-                                        {(order.kontriStatusCode === 100 || order.kontriStatusCode === 101) && (
+                                        {/*  {(order.kontriStatusCode === 100 || order.kontriStatusCode === 101) && (
                                             <button
                                                 className="btn btn-primary btn-xs text-nowrap"
                                                 onClick={() => checkOrderStatus(order.AltumOrderID)}
                                             >
                                                 Dotaz na stav
                                             </button>
-                                        )}
+                                        )} */}
                                     </td>
                                 </tr>
                             ))}
@@ -172,7 +172,7 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
                         <p>Načítá se...</p>
                     </div>
                 )}
-            </div> */}
+            </div>
             <div className="toast toast-start z-50">
                 {messages.map((message, index) => (
                     <div key={index} className={`alert alert-${message.type}`}>
