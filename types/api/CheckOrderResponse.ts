@@ -1,4 +1,4 @@
-type Article = {
+export type Article = {
     AltumArticleID: number;
     Barcode?: string;
     Code: string;
@@ -16,17 +16,17 @@ type Document = {
     GrossValue: number;
 }
 
-type OrderResponseResult = {
-    Code: number;
+export type OrderResponseResult = {
+    Code: string | number;
     Message: string;
-    AltumOrderID: number;
-    AltumOrderNumber: string;
-    Articles: Article[];
+    AltumOrderID?: number;
+    AltumOrderNumber?: string;
+    Articles?: Article[] | {Article: Article[]};
     PackageTrackingNumber?: string;
-    Documents: Document[],
-    GrossValue: number;
-    NetValue: number;
-    Status: number;
+    Documents?: Document[],
+    GrossValue?: number;
+    NetValue?: number;
+    Status?: number;
 }
 
 export type CheckOrderResponse = {

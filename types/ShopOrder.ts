@@ -11,10 +11,10 @@ type ShopOrder = {
     orderItemVariantName: string,
     orderItemSupplier: string,
     orderItemEan: string
-    shortage: number
-    AltumOrderID: string
-    kontriStatusCode: number
-    kontriStatusName: string
+    shortage?: number
+    AltumOrderID: string|null
+    kontriStatusCode?: number
+    kontriStatusName?: string
     fID?: string
 }
 

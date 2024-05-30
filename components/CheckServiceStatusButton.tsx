@@ -25,7 +25,7 @@ const CheckServiceStatusButton = () => {
                 KontriAPI status
             </button>
             {status && (
-                <div className="toast toast-primary toast-start z-10">
+                <div className="toast toast-primary toast-start z-50">
                     <div className={`alert ${status === "OK" ? "alert-success" : "alert-error"}`}>
                         <span>{status === "OK" ? "KontriAPI je dostupné." : "Chyba: " + status}</span>
                     </div>

@@ -1,10 +1,11 @@
+"use server";
 import { createClient, BasicAuthSecurity, Client } from 'soap';
 
 const url = "https://api.kontri.pl:8866/KontriAPIservice.svc?wsdl";
 const username = process.env.KONTRI_API_USER!;
 const password = process.env.KONTRI_API_PASSWORD!;
 
-export function createClient_(): Promise<Client> {
+function createClient_(): Promise<Client> {
     return new Promise((resolve, reject) => {
         const options = {
             wsdl_headers: {
@@ -37,18 +38,6 @@ export async function getOrderStatus(altumOrderID: string) {
     const client = await createClient_();
     return new Promise((resolve, reject) => {
         client.GetOrderStatus({ AltumOrderID: altumOrderID }, (err: any, result: any) => {
-            if (err) {
-                return reject(err);
-            }
-            resolve(result);
-        });
-    });
-}
-
-export async function sendOrder(orderObject: any) {
-    const client = await createClient_();
-    return new Promise((resolve, reject) => {
-        client.AddOrder({ Order: orderObject }, (err: any, result: any) => {
             if (err) {
                 return reject(err);
             }

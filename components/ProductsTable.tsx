@@ -5,14 +5,31 @@ import ShopOrder from "@/types/ShopOrder";
 import { TABLE_ITEMS_FETCH_COUNT } from "@/utils/constants";
 import { feedsDownload } from "@/actions/feedsDownload";
 import { checkOrder } from "@/actions/checkOrder";
-import { triggerOrdersSend } from "@/actions/triggerOrdersSend";
+import { sendOrders } from "@/actions/triggerOrdersSend";
 import { getProducts } from "@/db/getProducts";
-import { formatDate } from "@/utils/formatDate";
+import { formatDate, formatTime } from "@/utils/formatDate";
+import { OrderInfoModal } from "./OrderInfoModal";
+import { OrderResponseResult } from "@/types/api/CheckOrderResponse";
+
+type Message = {
+    type: "success" | "error" | "info";
+    message: string;
+};
 
 const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }) => {
     const [shopOrders, setShopOrders] = useState(initialShopOrders);
     const [loading, setLoading] = useState(false);
-    const [messages, setMessages] = useState<string[]>([]);
+    const [messages, setMessages] = useState<Message[]>([]);
+    const [modalOrder, setModalOrder] = useState<OrderResponseResult | null>(null);
+
+    const openModal = () => {
+        (document.getElementById("order-info-modal") as HTMLDialogElement).showModal();
+    };
+
+    const closeModal = () => {
+        (document.getElementById("order-info-modal") as HTMLDialogElement).close();
+        setModalOrder(null);
+    };
 
     const refreshShopOrders = async () => {
         setLoading(true);
@@ -25,7 +42,7 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
         setLoading(true);
         const resp = await feedsDownload();
         if (resp.message) {
-            setMessages([...messages, resp.message]);
+            setMessages([...messages, { message: resp.message, type: "info" }]);
         }
         await refreshShopOrders();
         setLoading(false);
@@ -33,9 +50,9 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
 
     const triggerOrders = async () => {
         setLoading(true);
-        const resp = await triggerOrdersSend();
+        const resp = await sendOrders();
         if (resp.message) {
-            setMessages([...messages, resp.message]);
+            setMessages([...messages, { message: resp.message, type: "info" }]);
         }
         await refreshShopOrders();
         setLoading(false);
@@ -49,9 +66,15 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
         return () => clearTimeout(t);
     }, [messages]);
 
-    const checkOrderStatus = async (/* orderNumber: string */) => {
-        const shopOrdersAPI = await checkOrder("0");
-        console.log(shopOrdersAPI);
+    const checkOrderStatus = async (orderNumber: string | null) => {
+        if (!orderNumber) return setMessages([...messages, { message: "No order number.", type: "error" }]);
+        const shopOrdersAPI = await checkOrder(orderNumber);
+        if (shopOrdersAPI.Code !== 200 && shopOrdersAPI.Code !== "200") {
+            console.log(shopOrdersAPI);
+            return setMessages([...messages, { message: shopOrdersAPI.Message, type: "error" }]);
+        }
+        setModalOrder(shopOrdersAPI);
+        openModal();
     };
 
     return (
@@ -88,8 +111,8 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
                                 <th>Název produktu</th>
                                 <th>Varianta</th>
                                 <th>Počet</th>
-                                <th>Objednávka [Kontri]</th>
-                                <th>Nedostatky</th>
+                                <th className="tracking-tight">Kontri objednávka</th>
+                                <th className="tracking-tight">Nedostatky</th>
                                 <th>Stav dodání</th>
                                 <th></th>
                             </tr>
@@ -98,10 +121,25 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
                             {shopOrders.map((order) => (
                                 <tr key={order.code + order.orderItemCode}>
                                     <th>{order.code}</th>
-                                    <td className="text-nowrap">{formatDate(order.date)}</td>
+                                    <td>
+                                        <div className="flex flex-col">
+                                            <span className="text-nowrap">{formatDate(order.date)}</span>
+                                            <span className="text-nowrap">{formatTime(order.date)}</span>
+                                        </div>
+                                    </td>
                                     <td>{order.orderItemCode}</td>
                                     <td>{order.orderItemName}</td>
-                                    <td>{order.orderItemVariantName}</td>
+                                    <td>
+                                        <div className="flex flex-col">
+                                            {order.orderItemVariantName.split(",").map((item) => {
+                                                return (
+                                                    <div key={item} className="text-nowrap">
+                                                        {item}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </td>
                                     <td>
                                         {order.orderItemAmount} {order.orderItemUnit}
                                     </td>
@@ -111,12 +149,15 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
                                         {order.kontriStatusCode === 100 && <div className="badge badge-success">{order.kontriStatusName}</div>}
                                         {order.kontriStatusCode === 90 && <div className="badge badge-warning">{order.kontriStatusName}</div>}
                                         {order.kontriStatusCode !== 100 && order.kontriStatusCode !== 90 && (
-                                            <div className="badge badge-error">Neobjednáno.</div>
+                                            <div className="badge badge-error">Neobjednáno</div>
                                         )}
                                     </td>
                                     <td>
-                                        {order.AltumOrderID && (
-                                            <button className="btn btn-primary btn-xs text-nowrap" onClick={() => checkOrderStatus()}>
+                                        {(order.kontriStatusCode === 100 || order.kontriStatusCode === 101) && (
+                                            <button
+                                                className="btn btn-primary btn-xs text-nowrap"
+                                                onClick={() => checkOrderStatus(order.AltumOrderID)}
+                                            >
                                                 Dotaz na stav
                                             </button>
                                         )}
@@ -132,14 +173,15 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
                     </div>
                 )}
             </div>
-
-            <div className="toast toast-start">
+            <div className="toast toast-start z-50">
                 {messages.map((message, index) => (
-                    <div key={index} className="alert alert-info">
-                        <span>{message}</span>
+                    <div key={index} className={`alert alert-${message.type}`}>
+                        <span>{message.message}</span>
                     </div>
                 ))}
             </div>
+
+            <OrderInfoModal order={modalOrder} onClose={closeModal} />
         </>
     );
 };
