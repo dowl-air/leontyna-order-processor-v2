@@ -11,11 +11,11 @@ const NavBar = () => {
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h8m-8 6h16" />
                             </svg>
                         </div>
-                        <ul tabIndex={0} className="menu menu-sm dropdown-content mt-3 z-[1] p-2 shadow bg-base-100 rounded-box w-52"></ul>
+                        <ul tabIndex={0} className="menu menu-sm dropdown-content mt-3 z-[1] p-2 shadow bg-base-100 rounded-box w-52 hidden"></ul>
                     </div>
                 </div>
                 <div className="navbar-center flex gap-5">
-                    <span className="font-semibold">Leontyna cz/sk</span>
+                    <span className="font-semibold hidden md:block">Leontyna cz/sk</span>
                     <CheckServiceStatusButton />
                     <label className="flex cursor-pointer gap-2 items-center">
                         <svg
