@@ -80,7 +80,7 @@ export const sendOrders = async () => {
         if (ordersToResend) {
             console.log(`Orders (${ordersToResend.length}) to resend have been found.`);
             console.log("Resending orders to Kontri.");
-            message += "Resent " + ordersToResend.length + " orders. Codes: ";
+            message += "Znovu posláno " + ordersToResend.length + " objednávek. Kódy: ";
             for (const order of ordersToResend) {
                 await new Promise((resolve) => setTimeout(resolve, 2500));
                 const resp = await sendOrderHandler(order);
@@ -97,10 +97,10 @@ export const sendOrders = async () => {
             const resp = await sendOrderHandler(order);
             message += "Kód nové objednávky: " + resp.Code;
         }
-        return { status: "Success", message };
+        return { status: "success", message };
     } catch (error) {
         //todo send mail to admin with error
         console.error(error);
-        return { status: "Error" };
+        return { status: "error", message: "Nastala chyba při odesílání objednávek." };
     }
 };

@@ -42,7 +42,7 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
         setLoading(true);
         const resp = await feedsDownload();
         if (resp.message) {
-            setMessages([...messages, { message: resp.message, type: "info" }]);
+            setMessages([...messages, { message: resp.message, type: resp.status as Message["type"] }]);
         }
         await refreshShopOrders();
         setLoading(false);
@@ -52,7 +52,7 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
         setLoading(true);
         const resp = await sendOrders();
         if (resp.message) {
-            setMessages([...messages, { message: resp.message, type: "info" }]);
+            setMessages([...messages, { message: resp.message, type: resp.status as Message["type"] }]);
         }
         await refreshShopOrders();
         setLoading(false);
@@ -175,7 +175,12 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
             </div>
             <div className="toast toast-start z-50">
                 {messages.map((message, index) => (
-                    <div key={index} className={`alert alert-${message.type}`}>
+                    <div
+                        key={index}
+                        className={`alert ${message.type === "success" ? "alert-success" : ""}${message.type === "error" ? "alert-error" : ""}${
+                            message.type === "info" ? "alert-info" : ""
+                        }`}
+                    >
                         <span>{message.message}</span>
                     </div>
                 ))}

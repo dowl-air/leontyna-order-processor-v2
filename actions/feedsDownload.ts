@@ -51,8 +51,8 @@ export const feedsDownload = async () => {
 
     try {
         await Promise.all([fetchAndProcessCSV(SHOPTET_URL), fetchAndProcessCSV(SHOPTET_URL_SK)]);
-        return { message: "Data ze SHOPTET CZ&SK úspěšně staženy." };
+        return { status: "success", message: "Data ze SHOPTET CZ&SK úspěšně staženy." };
     } catch (error) {
-        return { message: "An error occurred while fetching data from SHOPTET." };
+        return { status: "error", message: "An error occurred while fetching data from SHOPTET." };
     }
 };
