@@ -8,8 +8,8 @@ import { checkOrder } from "@/actions/checkOrder";
 import { sendOrders } from "@/actions/triggerOrdersSend";
 import { getProducts } from "@/db/getProducts";
 import { formatDate, formatTime } from "@/utils/formatDate";
-import { OrderInfoModal } from "./OrderInfoModal";
-import { OrderResponseResult } from "@/types/api/CheckOrderResponse";
+/* import { OrderInfoModal } from "./OrderInfoModal";
+import { OrderResponseResult } from "@/types/api/CheckOrderResponse"; */
 
 type Message = {
     type: "success" | "error" | "info";
@@ -20,16 +20,16 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
     const [shopOrders, setShopOrders] = useState(initialShopOrders);
     const [loading, setLoading] = useState(false);
     const [messages, setMessages] = useState<Message[]>([]);
-    const [modalOrder, setModalOrder] = useState<OrderResponseResult | null>(null);
+    /* const [modalOrder, setModalOrder] = useState<OrderResponseResult | null>(null); */
 
-    const openModal = () => {
+    /* const openModal = () => {
         (document.getElementById("order-info-modal") as HTMLDialogElement).showModal();
     };
 
     const closeModal = () => {
         (document.getElementById("order-info-modal") as HTMLDialogElement).close();
         setModalOrder(null);
-    };
+    }; */
 
     const refreshShopOrders = async () => {
         setLoading(true);
@@ -48,7 +48,7 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
         setLoading(false);
     };
 
-    const triggerOrders = async () => {
+    /* const triggerOrders = async () => {
         setLoading(true);
         const resp = await sendOrders();
         if (resp.message) {
@@ -56,7 +56,7 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
         }
         await refreshShopOrders();
         setLoading(false);
-    };
+    }; */
 
     useEffect(() => {
         if (messages.length === 0) return;
@@ -73,8 +73,8 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
             console.log(shopOrdersAPI);
             return setMessages([...messages, { message: shopOrdersAPI.Message, type: "error" }]);
         }
-        setModalOrder(shopOrdersAPI);
-        openModal();
+        /* setModalOrder(shopOrdersAPI);
+        openModal(); */
     };
 
     return (
@@ -95,7 +95,7 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
                     <button className="btn btn-sm md:btn-md btn-outline btn-primary" onClick={triggerFeedDown}>
                         Vynutit stažení feedů
                     </button>
-                    <button className="btn btn-sm md:btn-md btn-outline btn-primary" onClick={triggerOrders}>
+                    <button className="btn btn-sm md:btn-md btn-outline btn-primary" onClick={() => {}}>
                         Vynutit odeslání objednávek
                     </button>
                 </div>

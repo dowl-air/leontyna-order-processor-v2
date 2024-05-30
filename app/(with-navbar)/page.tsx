@@ -8,7 +8,7 @@ const Home = async () => {
     const shopOrders = await getProducts(TABLE_ITEMS_FETCH_COUNT, null);
     return (
         <main className="flex min-h-screen flex-col items-start pt-[4.5rem] max-w-7xl mx-auto">
-            {/* <ProductsTable initialShopOrders={shopOrders} /> */}
+            <ProductsTable initialShopOrders={shopOrders} />
         </main>
     );
 };
