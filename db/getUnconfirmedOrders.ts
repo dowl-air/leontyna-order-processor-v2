@@ -4,6 +4,7 @@ import { Timestamp, collection, getDocs, query, where } from "firebase/firestore
 import { db } from "./init";
 import ShopOrder from "@/types/ShopOrder";
 import { createKontriOrder } from "@/utils/createKontriOrder";
+import { formatToUTC } from "@/utils/formatDate";
 
 export const getUnconfirmedOrders = async (): Promise<KontriOrder[]> => {
     const q = query(collection(db, "products"), where("kontriStatusCode", "==", 90))
@@ -14,7 +15,7 @@ export const getUnconfirmedOrders = async (): Promise<KontriOrder[]> => {
     const products: ShopOrder[] = []
     querySnapshot.forEach((doc) => {
         const data = doc.data()
-        products.push({ ...data, fID: doc.id, date: (data.date as Timestamp).toDate() } as ShopOrder)
+        products.push({ ...data, fID: doc.id, date: formatToUTC(data.date as Timestamp) } as ShopOrder)
     })
     // split to orders based on AltumOrderID
     const uniqueAltumOrderIDs = [...new Set(products.map((product) => product.AltumOrderID))]
