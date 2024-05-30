@@ -1,6 +1,8 @@
 import { feedsDownload } from "@/actions/feedsDownload";
 import { sendOrders } from "@/actions/triggerOrdersSend";
 
+export const dynamic = "force-dynamic";
+
 export const GET = async () => {
     try {
         await feedsDownload();
