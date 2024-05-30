@@ -122,10 +122,10 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
                                 <tr key={order.code + order.orderItemCode}>
                                     <th>{order.code}</th>
                                     <td>
-                                        <div className="flex flex-col">
+                                        {/* <div className="flex flex-col">
                                             <span className="text-nowrap">{formatDate(order.date)}</span>
                                             <span className="text-nowrap">{formatTime(order.date)}</span>
-                                        </div>
+                                        </div> */}
                                     </td>
                                     <td>{order.orderItemCode}</td>
                                     <td>{order.orderItemName}</td>
@@ -145,7 +145,7 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
                                     </td>
                                     <td>{order.AltumOrderID}</td>
                                     <td className={`text-center ${order.shortage && "text-error font-bold"}`}>{order.shortage}</td>
-                                    {/* <td className="text-center">
+                                    <td className="text-center">
                                         {order.kontriStatusCode === 100 && <div className="badge badge-success">{order.kontriStatusName}</div>}
                                         {order.kontriStatusCode === 90 && <div className="badge badge-warning">{order.kontriStatusName}</div>}
                                         {order.kontriStatusCode !== 100 && order.kontriStatusCode !== 90 && (
@@ -161,7 +161,7 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
                                                 Dotaz na stav
                                             </button>
                                         )}
-                                    </td> */}
+                                    </td>
                                 </tr>
                             ))}
                         </tbody>
