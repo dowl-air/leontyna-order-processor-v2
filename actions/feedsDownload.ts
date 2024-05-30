@@ -26,6 +26,7 @@ export const feedsDownload = async () => {
                         return new Promise((resolve, reject) => {
                             if (!json) return resolve({});
                             if (json.hasOwnProperty("orderItemType") && json.orderItemType !== "product") return resolve({});
+                            if (json.hasOwnProperty("orderItemCode") && json.orderItemCode.substring(0,2) !== "AK") return resolve({});
                             if (json.hasOwnProperty("orderItemSupplier") && json.orderItemSupplier !== "Kontri.pl") return resolve({});
                             if (json.hasOwnProperty("field13")) delete json.field13;
 
