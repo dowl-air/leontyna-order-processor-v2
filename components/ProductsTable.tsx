@@ -181,7 +181,7 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
                 ))}
             </div>
 
-            <OrderInfoModal order={modalOrder} onClose={closeModal} />
+            {/* <OrderInfoModal order={modalOrder} onClose={closeModal} /> */}
         </>
     );
 };
