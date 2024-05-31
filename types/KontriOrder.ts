@@ -3,9 +3,11 @@ import ShopOrder from "./ShopOrder"
 export type KontriOrder = {
     Segregation: boolean,
     NotifyWhenReadyToShip: boolean,
+    Comments: string,
     ShipmentRecipientName: string,
     ShipmentStreetname: string,
     ShipmentHouseNumber: string,
+    ShipmentFlatNumber: string,
     ShipmentCity: string,
     ShipmentPostcode: string,
     ShipmentCountry: string,

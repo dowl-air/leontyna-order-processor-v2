@@ -5,9 +5,11 @@ export const createKontriOrder = (products: ShopOrder[]): KontriOrder => {
     return {
         Segregation: true,
         NotifyWhenReadyToShip: false,
+        Comments: "",
         ShipmentRecipientName: "Leontyna.cz",
         ShipmentStreetname: "Sirava",
         ShipmentHouseNumber: "27",
+        ShipmentFlatNumber: "",
         ShipmentCity: "Prerov",
         ShipmentPostcode: "75002",
         ShipmentCountry: "CZ",
