@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import ShopOrder from "@/types/ShopOrder";
 import { TABLE_ITEMS_FETCH_COUNT } from "@/utils/constants";
@@ -19,8 +19,36 @@ type Message = {
 const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }) => {
     const [shopOrders, setShopOrders] = useState(initialShopOrders);
     const [loading, setLoading] = useState(false);
+    const [page, setPage] = useState(1);
     const [messages, setMessages] = useState<Message[]>([]);
     const [modalOrder, setModalOrder] = useState<OrderResponseResult | null>(null);
+    const observer = useRef<IntersectionObserver | null>(null);
+
+    useEffect(() => {
+        const loadMore = async () => {
+            const newOrders = await getProducts(TABLE_ITEMS_FETCH_COUNT, new Date(shopOrders[shopOrders.length - 1].date));
+            setShopOrders((s) => [...s, ...newOrders]);
+        };
+
+        if (page === 1) return;
+        loadMore();
+    }, [page]);
+
+    const lastPostElementRef = useCallback(
+        (node: HTMLElement | null) => {
+            if (loading) return;
+            if (observer.current) observer.current.disconnect();
+
+            observer.current = new IntersectionObserver((entries) => {
+                if (entries[0].isIntersecting) {
+                    setPage((prev) => prev + 1);
+                }
+            });
+
+            if (node) observer.current.observe(node);
+        },
+        [loading]
+    );
 
     const openModal = () => {
         (document.getElementById("order-info-modal") as HTMLDialogElement).showModal();
@@ -35,6 +63,7 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
         setLoading(true);
         const shopOrdersAPI = await getProducts(TABLE_ITEMS_FETCH_COUNT, null);
         setShopOrders(shopOrdersAPI);
+        setPage(1);
         setLoading(false);
     };
 
@@ -118,8 +147,8 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
                             </tr>
                         </thead>
                         <tbody>
-                            {shopOrders.map((order) => (
-                                <tr key={order.code + order.orderItemCode}>
+                            {shopOrders.map((order, index) => (
+                                <tr key={order.code + order.orderItemCode} ref={shopOrders.length === index + 1 ? lastPostElementRef : null}>
                                     <th>{order.code}</th>
                                     <td>
                                         <div className="flex flex-col">
