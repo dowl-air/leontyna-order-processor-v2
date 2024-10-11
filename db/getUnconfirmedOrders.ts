@@ -22,7 +22,7 @@ export const getUnconfirmedOrders = async (): Promise<KontriOrder[]> => {
     const orders: KontriOrder[] = []
     uniqueAltumOrderIDs.forEach((AltumOrderID) => {
         const productsForOrder = products.filter((product) => product.AltumOrderID === AltumOrderID)
-        orders.push(createKontriOrder(productsForOrder))
+        orders.push(createKontriOrder(productsForOrder, querySnapshot.docs[0].data().RefNumber))
     })
     return orders
 }
