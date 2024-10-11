@@ -6,18 +6,25 @@ import { KontriOrder } from "@/types/KontriOrder";
 import { sendOrder } from "./sendOrder";
 import { updateProduct } from "@/db/updateProduct";
 import { findProductByAltumID } from "@/utils/findProductByAltum";
+import { sendMail } from "./sendMail";
 
 const sendOrderHandler = async (orderObject: KontriOrder) => {
     try {
         const { products, ...orderObjectCopy } = orderObject;
         console.log("Sending order to Kontri.pl.");
         const order = await sendOrder(orderObjectCopy);
-        
+
         if (!order.Code) {
-            //todo send mail to admin
-            console.log("Order has not been sent.");
-            console.log(order);
-            return {Code: 0};
+            await sendMail({
+                subject: "Chyba při odesílání objednávky",
+                text: `Objednávka s kódem ${orderObjectCopy.RefNumber} nebyla odeslána`,
+                html: `<p>Objednávka s kódem ${orderObjectCopy.RefNumber} nebyla odeslána</p>
+                <p>Chyba: ${order.Message}</p>
+                <p>Objednávka: ${JSON.stringify(orderObjectCopy)}</p>
+                <p>Produkty: ${JSON.stringify(products)}</p>
+                `,
+            });
+            return { Code: 0 };
         }
 
         console.log(order);
@@ -28,12 +35,21 @@ const sendOrderHandler = async (orderObject: KontriOrder) => {
                 console.log("Order has been sent successfully.");
                 console.log(order.Message);
 
+                await sendMail({
+                    subject: "Objednávka byla odeslána",
+                    text: `Objednávka s kódem ${orderObjectCopy.RefNumber} byla odeslána, message: ${order.Message}`,
+                    html: `<p>Objednávka s kódem ${orderObjectCopy.RefNumber} byla odeslána, message: ${order.Message}</p>
+                    <p>Objednávka: ${JSON.stringify(orderObjectCopy)}</p>
+                    <p>Produkty: ${JSON.stringify(products)}</p>`,
+                });
+
                 const promises = products.map(async (product) => {
-                    await updateProduct(product, { 
-                        AltumOrderID: order.AltumOrderID, 
-                        kontriStatusCode: 100, 
+                    await updateProduct(product, {
+                        AltumOrderID: order.AltumOrderID,
+                        RefNumber: orderObjectCopy.RefNumber,
+                        kontriStatusCode: 100,
                         kontriStatusName: "Objednáno",
-                        shortage: 0
+                        shortage: 0,
                     });
                 });
                 await Promise.all(promises);
@@ -50,25 +66,56 @@ const sendOrderHandler = async (orderObject: KontriOrder) => {
             case 99:
                 console.log("Order has been added successfully. (but not sent yet)");
                 const tempCode = "TEMP_" + new Date().getTime();
+
+                await sendMail({
+                    subject: "Objednávka byla přidána",
+                    text: `Objednávka ${orderObjectCopy.RefNumber} byla přidána, message: ${order.Message}`,
+                    html: `<p>Objednávka ${orderObjectCopy.RefNumber} byla přidána, message: ${order.Message}</p>
+                    <p>Temp kód: ${tempCode}</p>
+                    <p>Objednávka: ${JSON.stringify(orderObjectCopy)}</p>
+                    <p>Produkty: ${JSON.stringify(products)}</p>`,
+                });
+
                 const promises_ = products.map(async (product) => {
-                    await updateProduct(product, { 
-                        AltumOrderID: tempCode, 
-                        kontriStatusCode: 90, 
-                        kontriStatusName: "Přidáno" 
+                    await updateProduct(product, {
+                        AltumOrderID: tempCode,
+                        RefNumber: orderObjectCopy.RefNumber,
+                        kontriStatusCode: 90,
+                        kontriStatusName: "Přidáno",
                     });
                 });
                 await Promise.all(promises_);
                 return order;
-            default:
-                //todo send mail to admin (only some codes)
-                console.log("Order has not been sent.");
-                console.log("Error: " + order.Message);
+
+            case 10:
+            case 21:
+            case 30:
+            case 50:
+            case 51:
+            case 70:
+            case 80:
+            case 110:
+                await sendMail({
+                    subject: "Chyba při odesílání objednávky",
+                    text: `Objednávka ${orderObjectCopy.RefNumber} nebyla odeslána`,
+                    html: `<p>[ERROR CODE ${order.Code}] Objednávka ${orderObjectCopy.RefNumber} nebyla odeslána</p>
+                    <p>Chyba: ${order.Message}</p>
+                    <p>Objednávka: ${JSON.stringify(orderObjectCopy)}</p>
+                    <p>Produkty: ${JSON.stringify(products)}</p>`,
+                });
                 return order;
+            default:
+                return { Code: 0 };
         }
     } catch (error) {
-        //todo send mail to admin maybe
-        console.log(error);
-        return {Code: 0}
+        await sendMail({
+            subject: "Chyba při odesílání objednávky",
+            text: `Objednávka ${orderObject.RefNumber} nebyla odeslána`,
+            html: `<p>Objednávka ${orderObject.RefNumber} nebyla odeslána</p>
+            <p>Chyba: ${error}</p>
+            <p>Objednávka: ${JSON.stringify(orderObject)}</p>`,
+        });
+        return { Code: 0 };
     }
 };
 
@@ -93,13 +140,17 @@ export const sendOrders = async () => {
         if (order) {
             console.log("New order has been created.");
             console.log("Sending order to Kontri.");
-            await new Promise((resolve) => setTimeout(resolve, 2500));
             const resp = await sendOrderHandler(order);
             message += "Kód nové objednávky: " + resp.Code;
         }
         return { status: "success", message };
     } catch (error) {
-        //todo send mail to admin with error
+        await sendMail({
+            subject: "Chyba při odesílání objednávek",
+            text: `Nastala chyba při odesílání objednávek`,
+            html: `<p>Nastala chyba při odesílání objednávek</p>
+            <p>Chyba: ${error}</p>`,
+        });
         console.error(error);
         return { status: "error", message: "Nastala chyba při odesílání objednávek." };
     }

@@ -14,6 +14,7 @@ export type KontriOrder = {
     AddOrderIfShortagesInStock: boolean,
     ShippingMethod: string,
     PaymentMethod: string,
+    RefNumber: string,
     OrderedItems: {
         AltumArticleId: number,
         Amount: number,

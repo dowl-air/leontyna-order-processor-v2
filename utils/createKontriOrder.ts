@@ -1,7 +1,7 @@
 import { KontriOrder } from "@/types/KontriOrder";
 import ShopOrder from "@/types/ShopOrder";
 
-export const createKontriOrder = (products: ShopOrder[]): KontriOrder => {
+export const createKontriOrder = (products: ShopOrder[], refNumber: string): KontriOrder => {
     return {
         Segregation: false,
         NotifyWhenReadyToShip: false,
@@ -16,6 +16,7 @@ export const createKontriOrder = (products: ShopOrder[]): KontriOrder => {
         AddOrderIfShortagesInStock: true,
         ShippingMethod: "DPD",
         PaymentMethod: "Prepayment",
+        RefNumber: refNumber,
         OrderedItems: products.map((product) => {
             const orderItemCodeParts = product.orderItemCode.split("-");
             const AltumArticleId = +orderItemCodeParts[2];
