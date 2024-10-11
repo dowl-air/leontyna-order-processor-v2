@@ -16,9 +16,9 @@ const sendOrderHandler = async (orderObject: KontriOrder) => {
 
         if (!order.Code) {
             await sendMail({
-                subject: "Chyba při odesílání objednávky",
+                subject: "[BAD_CODE] Chyba při odesílání objednávky",
                 text: `Objednávka s kódem ${orderObjectCopy.RefNumber} nebyla odeslána`,
-                html: `<p>Objednávka s kódem ${orderObjectCopy.RefNumber} nebyla odeslána</p>
+                html: `<p>[BAD_CODE] Objednávka s kódem ${orderObjectCopy.RefNumber} nebyla odeslána</p>
                 <p>Chyba: ${order.Message}</p>
                 <p>Objednávka: ${JSON.stringify(orderObjectCopy)}</p>
                 <p>Produkty: ${JSON.stringify(products)}</p>
@@ -96,7 +96,7 @@ const sendOrderHandler = async (orderObject: KontriOrder) => {
             case 80:
             case 110:
                 await sendMail({
-                    subject: "Chyba při odesílání objednávky",
+                    subject: `[ERROR CODE ${order.Code}] Chyba při odesílání objednávky`,
                     text: `Objednávka ${orderObjectCopy.RefNumber} nebyla odeslána`,
                     html: `<p>[ERROR CODE ${order.Code}] Objednávka ${orderObjectCopy.RefNumber} nebyla odeslána</p>
                     <p>Chyba: ${order.Message}</p>
@@ -109,11 +109,13 @@ const sendOrderHandler = async (orderObject: KontriOrder) => {
         }
     } catch (error) {
         await sendMail({
-            subject: "Chyba při odesílání objednávky",
+            subject: "[UNEXPECTED] Chyba při odesílání objednávky",
             text: `Objednávka ${orderObject.RefNumber} nebyla odeslána`,
-            html: `<p>Objednávka ${orderObject.RefNumber} nebyla odeslána</p>
+            html: `<p>[UNEXPECTED] Objednávka ${orderObject.RefNumber} nebyla odeslána</p>
             <p>Chyba: ${error}</p>
-            <p>Objednávka: ${JSON.stringify(orderObject)}</p>`,
+            <p>Objednávka: ${JSON.stringify(orderObject)}</p>
+            <p>Produkty: ${JSON.stringify(orderObject.products)}</p>
+            `,
         });
         return { Code: 0 };
     }
