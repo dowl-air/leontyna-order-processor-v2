@@ -12,16 +12,20 @@
         "csvtojson": "^2.0.10",
         "firebase": "^10.12.2",
         "next": "14.2.2",
+        "nodemailer": "^6.9.15",
         "react": "^18",
         "react-dom": "^18",
         "request": "^2.88.2",
-        "soap": "^1.0.3"
+        "soap": "^1.0.3",
+        "uuid": "^10.0.0"
     },
     "devDependencies": {
         "@types/node": "^20",
+        "@types/nodemailer": "^6.4.16",
         "@types/react": "^18",
         "@types/react-dom": "^18",
         "@types/soap": "^0.21.0",
+        "@types/uuid": "^10.0.0",
         "daisyui": "^4.10.2",
         "eslint": "^8",
         "eslint-config-next": "14.2.2",
