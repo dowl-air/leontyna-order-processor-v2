@@ -54,8 +54,8 @@ const sendOrderHandler = async (orderObject: KontriOrder) => {
                 });
                 await Promise.all(promises);
 
-                if (order.Shortages) {
-                    for (const shortage of order.Shortages) {
+                if (order.Shortages && order.Shortages.Shortages) {
+                    for (const shortage of order.Shortages.Shortages) {
                         const { AltumArticleID, Quantity } = shortage;
                         const product = findProductByAltumID(products, AltumArticleID);
                         if (product) await updateProduct(product, { shortage: Quantity });

@@ -32,3 +32,7 @@ export type OrderResponseResult = {
 export type CheckOrderResponse = {
     GetOrderStatusResult: OrderResponseResult | {Code: number, Message: string};
 }
+
+export type CheckOrderByRefNumberResponse = {
+    GetOrderStatusByRefNumberResult: OrderResponseResult | {Code: number, Message: string};
+};
