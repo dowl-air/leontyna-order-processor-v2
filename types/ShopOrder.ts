@@ -15,6 +15,7 @@ type ShopOrder = {
     AltumOrderID: string|null
     kontriStatusCode?: number
     kontriStatusName?: string
+    RefNumber?: string
     fID?: string
 }
 
