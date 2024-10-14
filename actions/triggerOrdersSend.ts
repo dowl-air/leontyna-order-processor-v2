@@ -24,7 +24,7 @@ const sendOrderHandler = async (orderObject: KontriOrder) => {
                 <p>Produkty: ${JSON.stringify(products)}</p>
                 `,
             });
-            return { Code: 0 };
+            return { Code: -1 };
         }
 
         console.log(order);
@@ -105,7 +105,8 @@ const sendOrderHandler = async (orderObject: KontriOrder) => {
                 });
                 return order;
             default:
-                return { Code: 0 };
+                console.error("Unknown error code: ", order.Code);
+                return { Code: order.Code };
         }
     } catch (error) {
         await sendMail({
@@ -117,7 +118,7 @@ const sendOrderHandler = async (orderObject: KontriOrder) => {
             <p>Produkty: ${JSON.stringify(orderObject.products)}</p>
             `,
         });
-        return { Code: 0 };
+        return { Code: -1 };
     }
 };
 
