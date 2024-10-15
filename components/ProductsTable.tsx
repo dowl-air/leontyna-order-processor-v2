@@ -236,23 +236,25 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
                                             <div className="badge badge-error">Neobjednáno</div>
                                         )}
                                     </td>
-                                    <td className="flex flex-col gap-2">
-                                        {order.RefNumber ? (
-                                            <button
-                                                className="btn btn-primary btn-xs text-nowrap"
-                                                onClick={() => checkOrderStatusByRefNumber(order.RefNumber)}
-                                            >
-                                                Dotaz [Referenční číslo]
-                                            </button>
-                                        ) : null}
-                                        {(order.kontriStatusCode === 100 || order.kontriStatusCode === 101) && (
-                                            <button
-                                                className="btn btn-primary btn-xs text-nowrap"
-                                                onClick={() => checkOrderStatus(order.AltumOrderID)}
-                                            >
-                                                Dotaz [Kontri ID]
-                                            </button>
-                                        )}
+                                    <td>
+                                        <div className="flex flex-col gap-2">
+                                            {order.RefNumber ? (
+                                                <button
+                                                    className="btn btn-primary btn-xs text-nowrap"
+                                                    onClick={() => checkOrderStatusByRefNumber(order.RefNumber)}
+                                                >
+                                                    Dotaz [Referenční číslo]
+                                                </button>
+                                            ) : null}
+                                            {(order.kontriStatusCode === 100 || order.kontriStatusCode === 101) && (
+                                                <button
+                                                    className="btn btn-primary btn-xs text-nowrap"
+                                                    onClick={() => checkOrderStatus(order.AltumOrderID)}
+                                                >
+                                                    Dotaz [Kontri ID]
+                                                </button>
+                                            )}
+                                        </div>
                                     </td>
                                 </tr>
                             ))}
