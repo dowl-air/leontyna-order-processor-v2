@@ -5,88 +5,68 @@ import { getUnconfirmedOrders } from "@/db/getUnconfirmedOrders";
 import { KontriOrder } from "@/types/KontriOrder";
 import { sendOrder } from "./sendOrder";
 import { updateProduct } from "@/db/updateProduct";
-import { findProductByAltumID } from "@/utils/findProductByAltum";
+import { getProductAltumID } from "@/utils/findProductByAltum";
 import { sendMail } from "./sendMail";
+import { sendOrderInfoMail } from "@/utils/sendOrderInfoMail";
 
 const sendOrderHandler = async (orderObject: KontriOrder) => {
     try {
-        const { products, ...orderObjectCopy } = orderObject;
-        console.log("Sending order to Kontri.pl.");
-        const order = await sendOrder(orderObjectCopy);
+        const { products, ...orderReq } = orderObject;
+        const refNumber = orderObject.RefNumber;
 
-        if (!order.Code) {
-            await sendMail({
-                subject: "[BAD_CODE] Chyba při odesílání objednávky",
-                text: `Objednávka s kódem ${orderObjectCopy.RefNumber} nebyla odeslána`,
-                html: `<p>[BAD_CODE] Objednávka s kódem ${orderObjectCopy.RefNumber} nebyla odeslána</p>
-                <p>Chyba: ${order.Message}</p>
-                <p>Objednávka: ${JSON.stringify(orderObjectCopy)}</p>
-                <p>Produkty: ${JSON.stringify(products)}</p>
-                `,
-            });
+        console.log(`Sending order [${refNumber}]`);
+        const orderResp = await sendOrder(orderReq);
+
+        const subject = `[${orderResp.Code}][${refNumber}]: ${orderResp.Message}`;
+        console.log(subject);
+
+        if (!orderResp.Code) {
+            await sendOrderInfoMail({ subject, orderObject, orderResp });
+            // todo? do something here?
             return { Code: -1 };
         }
 
-        console.log(order);
-
-        switch (order.Code) {
+        switch (orderResp.Code) {
             case 100:
             case 101:
-                console.log("Order has been sent successfully.");
-                console.log(order.Message);
-
-                await sendMail({
-                    subject: "Objednávka byla odeslána",
-                    text: `Objednávka s kódem ${orderObjectCopy.RefNumber} byla odeslána, message: ${order.Message}`,
-                    html: `<p>Objednávka s kódem ${orderObjectCopy.RefNumber} byla odeslána, message: ${order.Message}</p>
-                    <p>Objednávka: ${JSON.stringify(orderObjectCopy)}</p>
-                    <p>Produkty: ${JSON.stringify(products)}</p>`,
-                });
+                // todo? remove send mail
+                await sendOrderInfoMail({ subject, orderObject, orderResp });
 
                 const promises = products.map(async (product) => {
+                    const altumIDFromProduct = getProductAltumID(product.orderItemCode);
+                    const shortageItem = orderResp.Shortages?.Shortages?.find((shortage) => shortage.AltumArticleID === altumIDFromProduct);
+                    const shortageQuantity = shortageItem ? shortageItem.Quantity : 0;
+
                     await updateProduct(product, {
-                        AltumOrderID: order.AltumOrderID,
-                        RefNumber: orderObjectCopy.RefNumber,
+                        AltumOrderID: orderResp.AltumOrderID,
+                        RefNumber: refNumber,
                         kontriStatusCode: 100,
                         kontriStatusName: "Objednáno",
-                        shortage: 0,
+                        kontriOrderCode: orderResp.OrderNumber,
+                        shortage: shortageQuantity,
                     });
                 });
+
                 await Promise.all(promises);
 
-                if (order.Shortages && order.Shortages.Shortages) {
-                    for (const shortage of order.Shortages.Shortages) {
-                        const { AltumArticleID, Quantity } = shortage;
-                        const product = findProductByAltumID(products, AltumArticleID);
-                        if (product) await updateProduct(product, { shortage: Quantity });
-                    }
-                }
-                return order;
+                return orderResp;
             case 90:
             case 99:
-                console.log("Order has been added successfully. (but not sent yet)");
-                const tempCode = "TEMP_" + new Date().getTime();
-
-                await sendMail({
-                    subject: "Objednávka byla přidána",
-                    text: `Objednávka ${orderObjectCopy.RefNumber} byla přidána, message: ${order.Message}`,
-                    html: `<p>Objednávka ${orderObjectCopy.RefNumber} byla přidána, message: ${order.Message}</p>
-                    <p>Temp kód: ${tempCode}</p>
-                    <p>Objednávka: ${JSON.stringify(orderObjectCopy)}</p>
-                    <p>Produkty: ${JSON.stringify(products)}</p>`,
-                });
+                // todo? remove send mail
+                await sendOrderInfoMail({ subject, orderObject, orderResp });
 
                 const promises_ = products.map(async (product) => {
                     await updateProduct(product, {
-                        AltumOrderID: tempCode,
-                        RefNumber: orderObjectCopy.RefNumber,
+                        AltumOrderID: refNumber,
+                        RefNumber: refNumber,
                         kontriStatusCode: 90,
-                        kontriStatusName: "Přidáno",
+                        kontriStatusName: "Nepotvrzeno",
                     });
                 });
-                await Promise.all(promises_);
-                return order;
 
+                await Promise.all(promises_);
+
+                return orderResp;
             case 10:
             case 21:
             case 30:
@@ -95,29 +75,15 @@ const sendOrderHandler = async (orderObject: KontriOrder) => {
             case 70:
             case 80:
             case 110:
-                await sendMail({
-                    subject: `[ERROR CODE ${order.Code}] Chyba při odesílání objednávky`,
-                    text: `Objednávka ${orderObjectCopy.RefNumber} nebyla odeslána`,
-                    html: `<p>[ERROR CODE ${order.Code}] Objednávka ${orderObjectCopy.RefNumber} nebyla odeslána</p>
-                    <p>Chyba: ${order.Message}</p>
-                    <p>Objednávka: ${JSON.stringify(orderObjectCopy)}</p>
-                    <p>Produkty: ${JSON.stringify(products)}</p>`,
-                });
-                return order;
+                await sendOrderInfoMail({ subject, orderObject, orderResp });
+                return orderResp;
             default:
-                console.error("Unknown error code: ", order.Code);
-                return { Code: order.Code };
+                await sendOrderInfoMail({ subject: "[UNKNOWN]" + subject, orderObject, orderResp });
+                console.error("Unknown error code: ", orderResp.Code);
+                return { Code: orderResp.Code };
         }
     } catch (error) {
-        await sendMail({
-            subject: "[UNEXPECTED] Chyba při odesílání objednávky",
-            text: `Objednávka ${orderObject.RefNumber} nebyla odeslána`,
-            html: `<p>[UNEXPECTED] Objednávka ${orderObject.RefNumber} nebyla odeslána</p>
-            <p>Chyba: ${error}</p>
-            <p>Objednávka: ${JSON.stringify(orderObject)}</p>
-            <p>Produkty: ${JSON.stringify(orderObject.products)}</p>
-            `,
-        });
+        await sendOrderInfoMail({ subject: `[UNEXPECTED][${orderObject.RefNumber}]`, orderObject, error });
         return { Code: -1 };
     }
 };
@@ -125,14 +91,12 @@ const sendOrderHandler = async (orderObject: KontriOrder) => {
 export const sendOrders = async () => {
     try {
         let message = "";
-        //get products that are not yet finished (but sent to Kontri) - there may be more orders
         const ordersToResend = await getUnconfirmedOrders();
-        if (ordersToResend) {
-            console.log(`Orders (${ordersToResend.length}) to resend have been found.`);
-            console.log("Resending orders to Kontri.");
+        if (ordersToResend.length > 0) {
+            console.log(`${ordersToResend.length} orders to resend have been found.`);
             message += "Znovu posláno " + ordersToResend.length + " objednávek. Kódy: ";
             for (const order of ordersToResend) {
-                await new Promise((resolve) => setTimeout(resolve, 2500));
+                await new Promise((resolve) => setTimeout(resolve, 2100));
                 const resp = await sendOrderHandler(order);
                 message += resp.Code + ", ";
             }
@@ -141,10 +105,12 @@ export const sendOrders = async () => {
 
         const order = await getNewOrder();
         if (order) {
-            console.log("New order has been created.");
-            console.log("Sending order to Kontri.");
+            console.log(`New order [${order.RefNumber}] has been created.`);
+            await new Promise((resolve) => setTimeout(resolve, 2100));
             const resp = await sendOrderHandler(order);
             message += "Kód nové objednávky: " + resp.Code;
+        } else {
+            message = message.slice(0, -3);
         }
         return { status: "success", message };
     } catch (error) {

@@ -22,3 +22,5 @@ export type KontriOrder = {
     }[],
     products: ShopOrder[]
 }
+
+export type KontriOrderToSend = Omit<KontriOrder, "products">;

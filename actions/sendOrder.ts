@@ -1,11 +1,12 @@
 "use server";
 
-import { KontriOrder } from "@/types/KontriOrder";
+import { KontriOrderToSend } from "@/types/KontriOrder";
 import { AddOrderResponse } from "@/types/api/AddOrderResponse";
 
+// todo add to .env
 const SEND_ORDER_URL = "http://34.75.56.113:8080/api/sendOrder"
 
-export const sendOrder = async (orderObject: Omit<KontriOrder, "products">) => {
+export const sendOrder = async (orderObject: KontriOrderToSend) => {
     try {
         const resp = await fetch(SEND_ORDER_URL, { 
             method: "POST", 

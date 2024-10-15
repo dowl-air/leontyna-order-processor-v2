@@ -19,7 +19,7 @@ type Document = {
 export type OrderResponseResult = {
     Code: string | number;
     Message: string;
-    AltumOrderID?: number;
+    AltumOrderID?: number | string;
     AltumOrderNumber?: string;
     Articles?: Article[] | {Article: Article[]};
     PackageTrackingNumber?: string;

@@ -10,6 +10,7 @@ import { getProducts } from "@/db/getProducts";
 import { formatDate, formatTime } from "@/utils/formatDate";
 import { OrderInfoModal } from "./OrderInfoModal";
 import { OrderResponseResult } from "@/types/api/CheckOrderResponse";
+import { checkOrderByRefNumber } from "@/actions/checkOrderRefNumber";
 
 type Message = {
     type: "success" | "error" | "info";
@@ -95,15 +96,35 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
         return () => clearTimeout(t);
     }, [messages]);
 
+    const copyInnerText = (eventTarget: EventTarget) => {
+        navigator.clipboard.writeText((eventTarget as HTMLElement).innerText as string);
+        setMessages([...messages, { message: "Text byl zkopírován do schránky.", type: "info" }]);
+    };
+
     const checkOrderStatus = async (orderNumber: string | null) => {
         if (!orderNumber) return setMessages([...messages, { message: "No order number.", type: "error" }]);
+        setModalOrder(null);
+        openModal();
         const shopOrdersAPI = await checkOrder(orderNumber);
         if (shopOrdersAPI.Code !== 200 && shopOrdersAPI.Code !== "200") {
+            closeModal();
             console.log(shopOrdersAPI);
             return setMessages([...messages, { message: shopOrdersAPI.Message, type: "error" }]);
         }
         setModalOrder(shopOrdersAPI);
+    };
+
+    const checkOrderStatusByRefNumber = async (refNumber: string | undefined) => {
+        if (!refNumber) return setMessages([...messages, { message: "No ref number.", type: "error" }]);
+        setModalOrder(null);
         openModal();
+        const shopOrdersAPI = await checkOrderByRefNumber(refNumber);
+        if (shopOrdersAPI.Code !== 200 && shopOrdersAPI.Code !== "200") {
+            closeModal();
+            console.log(shopOrdersAPI);
+            return setMessages([...messages, { message: shopOrdersAPI.Message, type: "error" }]);
+        }
+        setModalOrder(shopOrdersAPI);
     };
 
     return (
@@ -131,7 +152,7 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
             </div>
             <div className="overflow-x-auto max-h-[calc(100vh-72px-48px-8px)] w-full">
                 {!loading ? (
-                    <table className="table table-pin-rows">
+                    <table className="table table-zebra table-pin-rows">
                         <thead className="">
                             <tr>
                                 <th>Kód objednávky</th>
@@ -141,6 +162,7 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
                                 <th>Varianta</th>
                                 <th>Počet</th>
                                 <th className="tracking-tight">Kontri objednávka</th>
+                                <th className="tracking-tight">Referenční číslo</th>
                                 <th className="tracking-tight">Nedostatky</th>
                                 <th>Stav dodání</th>
                                 <th></th>
@@ -149,15 +171,21 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
                         <tbody>
                             {shopOrders.map((order, index) => (
                                 <tr key={order.code + order.orderItemCode} ref={shopOrders.length === index + 1 ? lastPostElementRef : null}>
-                                    <th>{order.code}</th>
+                                    <th className="cursor-copy" onClick={(e) => copyInnerText(e.target)}>
+                                        {order.code}
+                                    </th>
                                     <td>
                                         <div className="flex flex-col">
                                             <span className="text-nowrap">{formatDate(order.date)}</span>
                                             <span className="text-nowrap">{formatTime(order.date)}</span>
                                         </div>
                                     </td>
-                                    <td>{order.orderItemCode}</td>
-                                    <td>{order.orderItemName}</td>
+                                    <td className="text-nowrap cursor-copy" onClick={(e) => copyInnerText(e.target)}>
+                                        {order.orderItemCode}
+                                    </td>
+                                    <td className="cursor-copy" onClick={(e) => copyInnerText(e.target)}>
+                                        {order.orderItemName}
+                                    </td>
                                     <td>
                                         <div className="flex flex-col">
                                             {order.orderItemVariantName.split(",").map((item) => {
@@ -172,7 +200,28 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
                                     <td>
                                         {order.orderItemAmount} {order.orderItemUnit}
                                     </td>
-                                    <td>{order.AltumOrderID}</td>
+                                    <td>
+                                        <div className="flex flex-col gap-1">
+                                            {order.AltumOrderID !== null && order.AltumOrderID !== order.RefNumber ? (
+                                                <div className="text-nowrap">
+                                                    Altum ID:{" "}
+                                                    <b className="cursor-copy" onClick={(e) => copyInnerText(e.target)}>
+                                                        {order.AltumOrderID}
+                                                    </b>
+                                                </div>
+                                            ) : null}
+                                            {order.kontriOrderCode ? (
+                                                <div className="text-nowrap cursor-copy" onClick={(e) => copyInnerText(e.target)}>
+                                                    {order.kontriOrderCode}
+                                                </div>
+                                            ) : null}
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <div className="cursor-copy" onClick={(e) => copyInnerText(e.target)}>
+                                            {order.RefNumber}
+                                        </div>
+                                    </td>
                                     <td className={`text-center ${order.shortage && "text-error font-bold"}`}>{order.shortage}</td>
                                     <td className="text-center">
                                         {order.kontriStatusCode === 100 && <div className="badge badge-success">{order.kontriStatusName}</div>}
@@ -181,13 +230,19 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
                                             <div className="badge badge-error">Neobjednáno</div>
                                         )}
                                     </td>
-                                    <td>
+                                    <td className="flex flex-col gap-2">
+                                        <button
+                                            className="btn btn-primary btn-xs text-nowrap"
+                                            onClick={() => checkOrderStatusByRefNumber(order.RefNumber)}
+                                        >
+                                            Dotaz [Referenční číslo]
+                                        </button>
                                         {(order.kontriStatusCode === 100 || order.kontriStatusCode === 101) && (
                                             <button
                                                 className="btn btn-primary btn-xs text-nowrap"
                                                 onClick={() => checkOrderStatus(order.AltumOrderID)}
                                             >
-                                                Dotaz na stav
+                                                Dotaz [Kontri ID]
                                             </button>
                                         )}
                                     </td>

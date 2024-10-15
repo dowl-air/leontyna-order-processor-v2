@@ -1,6 +1,24 @@
 import { Article, OrderResponseResult } from "@/types/api/CheckOrderResponse";
 
 export const OrderInfoModal = ({ order, onClose }: { order: OrderResponseResult | null; onClose: () => void }) => {
+    if (!order)
+        return (
+            <dialog id="order-info-modal" className="modal modal-bottom sm:modal-middle">
+                <div className="modal-box">
+                    <div className="py-4 flex items-center justify-center">
+                        <span className="loading loading-infinity w-20 mt-16"></span>
+                    </div>
+                    <div className="modal-action">
+                        <form method="dialog">
+                            <button className="btn btn-error" onClick={onClose}>
+                                Zavřít
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </dialog>
+        );
+
     const articles = order?.Articles && "Article" in order?.Articles ? order.Articles.Article : (order?.Articles as Article[]);
     return (
         <dialog id="order-info-modal" className="modal modal-bottom sm:modal-middle">
