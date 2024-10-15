@@ -231,12 +231,14 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
                                         )}
                                     </td>
                                     <td className="flex flex-col gap-2">
-                                        <button
-                                            className="btn btn-primary btn-xs text-nowrap"
-                                            onClick={() => checkOrderStatusByRefNumber(order.RefNumber)}
-                                        >
-                                            Dotaz [Referenční číslo]
-                                        </button>
+                                        {order.RefNumber ? (
+                                            <button
+                                                className="btn btn-primary btn-xs text-nowrap"
+                                                onClick={() => checkOrderStatusByRefNumber(order.RefNumber)}
+                                            >
+                                                Dotaz [Referenční číslo]
+                                            </button>
+                                        ) : null}
                                         {(order.kontriStatusCode === 100 || order.kontriStatusCode === 101) && (
                                             <button
                                                 className="btn btn-primary btn-xs text-nowrap"
