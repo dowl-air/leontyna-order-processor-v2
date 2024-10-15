@@ -171,8 +171,10 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
                         <tbody>
                             {shopOrders.map((order, index) => (
                                 <tr key={order.code + order.orderItemCode} ref={shopOrders.length === index + 1 ? lastPostElementRef : null}>
-                                    <th className="cursor-copy" onClick={(e) => copyInnerText(e.target)}>
-                                        {order.code}
+                                    <th>
+                                        <div className="cursor-copy" onClick={(e) => copyInnerText(e.target)}>
+                                            {order.code}
+                                        </div>
                                     </th>
                                     <td>
                                         <div className="flex flex-col">
@@ -180,11 +182,15 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
                                             <span className="text-nowrap">{formatTime(order.date)}</span>
                                         </div>
                                     </td>
-                                    <td className="text-nowrap cursor-copy" onClick={(e) => copyInnerText(e.target)}>
-                                        {order.orderItemCode}
+                                    <td>
+                                        <div className="text-nowrap cursor-copy" onClick={(e) => copyInnerText(e.target)}>
+                                            {order.orderItemCode}
+                                        </div>
                                     </td>
-                                    <td className="cursor-copy" onClick={(e) => copyInnerText(e.target)}>
-                                        {order.orderItemName}
+                                    <td>
+                                        <div className="cursor-copy" onClick={(e) => copyInnerText(e.target)}>
+                                            {order.orderItemName}
+                                        </div>
                                     </td>
                                     <td>
                                         <div className="flex flex-col">
