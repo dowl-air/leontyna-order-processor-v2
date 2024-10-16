@@ -19,7 +19,7 @@ export const OrderInfoModal = ({ order, onClose }: { order: OrderResponseResult 
             </dialog>
         );
 
-    const articles = order?.Articles && "Article" in order?.Articles ? order.Articles.Article : (order?.Articles as Article[]);
+    const articles = order.Articles?.Article;
     return (
         <dialog id="order-info-modal" className="modal modal-bottom sm:modal-middle">
             <div className="modal-box">

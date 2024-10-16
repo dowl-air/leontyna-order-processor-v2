@@ -7,13 +7,19 @@ export type Article = {
     TotalGrossPrice: number;
     TotalNetPrice: number;
     VATRate: number;
-}
+};
 
 type Document = {
     Number: string;
     Date: string;
     NetValue: number;
     GrossValue: number;
+};
+
+export enum OrderStatus {
+    NEW = "Nowe",
+    AGGREGATED = "Anulowane/zagregowane",
+    SENT = "Wyslane",
 }
 
 export type OrderResponseResult = {
@@ -21,18 +27,18 @@ export type OrderResponseResult = {
     Message: string;
     AltumOrderID?: number | string;
     AltumOrderNumber?: string;
-    Articles?: Article[] | {Article: Article[]};
+    Articles?: { Article: Article[] };
     PackageTrackingNumber?: string;
-    Documents?: Document[],
+    Documents?: Document[];
     GrossValue?: number;
     NetValue?: number;
-    Status?: number;
-}
+    Status?: OrderStatus;
+};
 
 export type CheckOrderResponse = {
-    GetOrderStatusResult: OrderResponseResult | {Code: number, Message: string};
-}
+    GetOrderStatusResult: OrderResponseResult | { Code: number; Message: string };
+};
 
 export type CheckOrderByRefNumberResponse = {
-    GetOrderStatusByRefNumberResult: OrderResponseResult | {Code: number, Message: string};
+    GetOrderStatusByRefNumberResult: OrderResponseResult | { Code: number; Message: string };
 };

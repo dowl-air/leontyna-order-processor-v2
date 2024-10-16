@@ -255,7 +255,7 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
                                                     Dotaz [Referenční číslo]
                                                 </button>
                                             ) : null}
-                                            {(order.kontriStatusCode === 100 || order.kontriStatusCode === 101) && (
+                                            {order.kontriStatusCode && order.kontriStatusCode >= 100 && (
                                                 <button
                                                     className="btn btn-primary btn-xs text-nowrap"
                                                     onClick={() => checkOrderStatus(order.AltumOrderID)}
