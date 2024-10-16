@@ -178,8 +178,8 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
                                     </th>
                                     <td>
                                         <div className="flex flex-col">
-                                            <span className="text-nowrap">{formatDate(order.date)}</span>
-                                            <span className="text-nowrap">{formatTime(order.date)}</span>
+                                            <span className="text-nowrap">{formatDate(order.date as string)}</span>
+                                            <span className="text-nowrap">{formatTime(order.date as string)}</span>
                                         </div>
                                     </td>
                                     <td>
@@ -230,10 +230,19 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
                                     </td>
                                     <td className={`text-center ${order.shortage && "text-error font-bold"}`}>{order.shortage}</td>
                                     <td className="text-center">
-                                        {order.kontriStatusCode === 100 && <div className="badge badge-success">{order.kontriStatusName}</div>}
-                                        {order.kontriStatusCode === 90 && <div className="badge badge-warning">{order.kontriStatusName}</div>}
-                                        {order.kontriStatusCode !== 100 && order.kontriStatusCode !== 90 && (
-                                            <div className="badge badge-error">Neobjednáno</div>
+                                        {order.kontriStatusCode && (
+                                            <div className="flex flex-col gap-1 items-center">
+                                                {order.kontriStatusCode === 0 && <div className="badge badge-error">Neobjednáno</div>}
+                                                {order.kontriStatusCode === 90 && <div className="badge badge-warning">{order.kontriStatusName}</div>}
+                                                {[100, 300, 301, 400].includes(order.kontriStatusCode) && (
+                                                    <div className="badge badge-success">{order.kontriStatusName}</div>
+                                                )}
+                                                {[300, 400].includes(order.kontriStatusCode) && (
+                                                    <div className="badge badge-accent text-nowrap">Agregováno sem</div>
+                                                )}
+                                                {order.kontriStatusCode === 301 && <div className="badge badge-warning">Přesunuto</div>}
+                                                {order.kontriStatusCode === 400 && <div className="badge badge-secondary">Odesláno</div>}
+                                            </div>
                                         )}
                                     </td>
                                     <td>
