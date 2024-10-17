@@ -17,6 +17,7 @@ const updateProductGroupState = async (refNumber: string, products: ShopOrder[],
 
     switch (status.Status) {
         case OrderStatus.AGGREGATED:
+        case OrderStatus.AGGREGATED_HERE:
             if ((status.Articles?.Article.length ?? 1) > products.length + 1) {
                 newStatusCode = 300;
             } else {
@@ -24,6 +25,7 @@ const updateProductGroupState = async (refNumber: string, products: ShopOrder[],
             }
             break;
         case OrderStatus.SENT:
+        case OrderStatus.READY_TO_SEND:
             newStatusCode = 400;
     }
 

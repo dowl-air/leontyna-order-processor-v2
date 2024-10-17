@@ -19,6 +19,8 @@ type Document = {
 export enum OrderStatus {
     NEW = "Nowe",
     AGGREGATED = "Anulowane/zagregowane",
+    AGGREGATED_HERE = "Kompletowane",
+    READY_TO_SEND = "Przygotowane do wysylki",
     SENT = "Wyslane",
 }
 
