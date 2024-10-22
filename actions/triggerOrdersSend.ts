@@ -29,9 +29,6 @@ const sendOrderHandler = async (orderObject: KontriOrder) => {
         switch (orderResp.Code) {
             case 100:
             case 101:
-                // todo? remove send mail
-                await sendOrderInfoMail({ subject, orderObject, orderResp });
-
                 const promises = products.map(async (product) => {
                     const altumIDFromProduct = getProductAltumID(product.orderItemCode);
                     const shortageItem = orderResp.Shortages?.Shortages?.find((shortage) => shortage.AltumArticleID === altumIDFromProduct);
@@ -52,9 +49,6 @@ const sendOrderHandler = async (orderObject: KontriOrder) => {
                 return orderResp;
             case 90:
             case 99:
-                // todo? remove send mail
-                await sendOrderInfoMail({ subject, orderObject, orderResp });
-
                 const promises_ = products.map(async (product) => {
                     await updateProduct(product, {
                         AltumOrderID: refNumber,
@@ -63,7 +57,6 @@ const sendOrderHandler = async (orderObject: KontriOrder) => {
                         kontriStatusName: "Nepotvrzeno",
                     });
                 });
-
                 await Promise.all(promises_);
 
                 return orderResp;
