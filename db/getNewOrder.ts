@@ -24,7 +24,7 @@ export const getNewOrder = async (): Promise<KontriOrder | null> => {
     });
 
     //update products with refNumber to ensure consistency and atomicity for future requests
-    const promises = products.map(async (product) => await updateProduct(product, { RefNumber: refNumber, AltumOrderID: refNumber }));
+    const promises = products.map(async (product) => await updateProduct(product, { RefNumber: refNumber }));
     await Promise.all(promises);
 
     return createKontriOrder(products, refNumber);
