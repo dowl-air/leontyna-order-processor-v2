@@ -60,13 +60,23 @@ const sendOrderHandler = async (orderObject: KontriOrder) => {
                 await Promise.all(promises_);
 
                 return orderResp;
+            case 80:
+                const promises__ = products.map(async (product) => {
+                    await updateProduct(product, {
+                        AltumOrderID: refNumber,
+                        RefNumber: refNumber,
+                        kontriStatusCode: 80,
+                        kontriStatusName: "Nedostupné",
+                    });
+                });
+                await Promise.all(promises__);
+                return orderResp;
             case 10:
             case 21:
             case 30:
             case 50:
             case 51:
             case 70:
-            case 80:
             case 110:
                 await sendOrderInfoMail({ subject, orderObject, orderResp });
                 return orderResp;

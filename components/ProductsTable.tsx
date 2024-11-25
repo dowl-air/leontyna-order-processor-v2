@@ -228,22 +228,27 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
                                             {order.RefNumber}
                                         </div>
                                     </td>
-                                    <td className={`text-center ${order.shortage && "text-error font-bold"}`}>{order.shortage}</td>
+                                    <td className={`text-center ${order.shortage ? "text-error font-bold" : ""}`}>{order.shortage}</td>
                                     <td className="text-center">
-                                        {order.kontriStatusCode && (
+                                        {order.kontriStatusCode !== undefined ? (
                                             <div className="flex flex-col gap-1 items-center">
-                                                {order.kontriStatusCode === 0 && <div className="badge badge-error">Neobjednáno</div>}
-                                                {order.kontriStatusCode === 90 && <div className="badge badge-warning">{order.kontriStatusName}</div>}
-                                                {[100, 300, 301, 400].includes(order.kontriStatusCode) && (
+                                                {order.kontriStatusCode === 0 ? <div className="badge badge-error">Neobjednáno</div> : null}
+                                                {order.kontriStatusCode === 80 ? (
+                                                    <div className="badge badge-error">{order.kontriStatusName}</div>
+                                                ) : null}
+                                                {order.kontriStatusCode === 90 ? (
+                                                    <div className="badge badge-warning">{order.kontriStatusName}</div>
+                                                ) : null}
+                                                {[100, 300, 301, 400].includes(order.kontriStatusCode) ? (
                                                     <div className="badge badge-success">{order.kontriStatusName}</div>
-                                                )}
-                                                {[300, 400].includes(order.kontriStatusCode) && (
+                                                ) : null}
+                                                {[300, 400].includes(order.kontriStatusCode) ? (
                                                     <div className="badge badge-accent text-nowrap">Agregováno sem</div>
-                                                )}
-                                                {order.kontriStatusCode === 301 && <div className="badge badge-warning">Přesunuto</div>}
-                                                {order.kontriStatusCode === 400 && <div className="badge badge-secondary">Odesláno</div>}
+                                                ) : null}
+                                                {order.kontriStatusCode === 301 ? <div className="badge badge-warning">Přesunuto</div> : null}
+                                                {order.kontriStatusCode === 400 ? <div className="badge badge-secondary">Odesláno</div> : null}
                                             </div>
-                                        )}
+                                        ) : null}
                                     </td>
                                     <td>
                                         <div className="flex flex-col gap-2">
@@ -255,14 +260,14 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
                                                     Dotaz [Referenční číslo]
                                                 </button>
                                             ) : null}
-                                            {order.kontriStatusCode && order.kontriStatusCode >= 100 && (
+                                            {order.kontriStatusCode && order.kontriStatusCode >= 100 ? (
                                                 <button
                                                     className="btn btn-primary btn-xs text-nowrap"
                                                     onClick={() => checkOrderStatus(order.AltumOrderID)}
                                                 >
                                                     Dotaz [Kontri ID]
                                                 </button>
-                                            )}
+                                            ) : null}
                                         </div>
                                     </td>
                                 </tr>
