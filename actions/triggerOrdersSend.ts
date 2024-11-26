@@ -21,8 +21,15 @@ const sendOrderHandler = async (orderObject: KontriOrder) => {
         console.log(subject);
 
         if (!orderResp.Code) {
-            await sendOrderInfoMail({ subject, orderObject, orderResp });
-            // todo? do something here?
+            if (orderResp.errno === -111) {
+                console.log("Just ECONNREFUSED, nothing to worry about.");
+            } else if (orderResp.errno === -110) {
+                console.log("Just ECONNRESET, nothing to worry about.");
+            } else if (orderResp.errno === -3001) {
+                console.log("Just EAI_AGAIN, nothing to worry about.");
+            } else {
+                await sendOrderInfoMail({ subject: `[RESP_EMPTY][${refNumber}]`, orderObject, orderResp });
+            }
             return { Code: -1 };
         }
 

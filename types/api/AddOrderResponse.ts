@@ -21,5 +21,6 @@ export type AddOrderResponse = {
         TotalOrderValue?: number;
         ShipmentPayment?: number;
         ShipmentConst?: number;
+        errno?: number;
     };
 };
