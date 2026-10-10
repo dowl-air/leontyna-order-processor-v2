@@ -140,6 +140,15 @@ reconciliation stores the shortages (including zero) and clears the unknown flag
 Missing/malformed articles, incomplete or changed snapshots, extra IDs, excessive quantities,
 and contradictions with known shortages leave quantities unknown. Aggregated and later statuses
 are excluded from quantity calculation; historical groups without a snapshot require manual review.
+Reconciliation follows the saved document-ID order, not a newly sorted group. Snapshot item values
+are compared independently of JSON object-key order. Rejections appear in the action result and
+the safe server warning `Kontri shortage reconciliation rejected` with reference, reason code,
+and detail; full request/response payloads and credentials are never logged. Examples:
+`SNAPSHOT_MISSING` (no saved JSON), `MEMBERSHIP_MISMATCH` (document IDs/count differ),
+`LEADER_MISMATCH`, `SNAPSHOT_ITEMS_MISMATCH`, `ARTICLES_MISSING`, `ORDER_STATUS`,
+`UNEXPECTED_API_ID`, `ARTICLE_QUANTITY_INVALID`, `EXCESS_QUANTITY`, and `KNOWN_SHORTAGE_CONFLICT`.
+Quantity errors identify the affected API ID and, where applicable, requested/returned amounts.
+An unchanged persistence result is reported rather than silently discarded.
 Failed lookups for already confirmed orders never trigger retry. The publication transaction checks
 the snapshot again and rejects quantity calculation if the group advanced to aggregation meanwhile.
 The persisted API ID is shown below the original product code. Late reconciliation cannot replace

@@ -63,6 +63,8 @@ The application reads these environment variables: `FIREBASE_API_KEY`, `SHOPTET_
 
 ## Agent Behavior
 
+- Shortage reconciliation must use saved request document order and semantic item values, not newly sorted membership or JSON key order. Keep rejection reason codes/details visible in action results and safe server logs, including when persistence makes no writes. Never log raw request/response payloads or credentials for diagnosis.
+
 - Read the relevant action, data-access module, and caller before changing a flow; keep changes focused and preserve the existing boundaries.
 - Prefer existing integrations and helpers over adding dependencies or parallel implementations.
 - Do not claim a check passed unless it was run. Report warnings and unavailable checks accurately.

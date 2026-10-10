@@ -108,6 +108,21 @@ describe("sendOrders with persisted mapping", () => {
         expect(mocks.update.mock.calls[0][1]).not.toHaveProperty("shortage");
         expect(mocks.update.mock.calls[0][1].kontriReconciliationRequired).toBe(true);
     });
+    it.each([true, false])("includes exact diagnostic details even when persistence returns %s", async (updated) => {
+        mocks.pending.mockResolvedValue([{ RefNumber: "stable", products: quantityGroup() }]);
+        mocks.newOrder.mockResolvedValue(null);
+        mocks.persist.mockResolvedValue(updated);
+        mocks.check.mockResolvedValue({
+            Code: 200,
+            Status: "Nowe",
+            AltumOrderID: 123,
+            Articles: { Article: [{ AltumArticleID: 999, Quantity: 1 }] },
+        });
+        const result = await run();
+        expect(result.message).toContain("UNEXPECTED_API_ID");
+        expect(result.message).toContain("API ID 999");
+        expect(mocks.send).not.toHaveBeenCalled();
+    });
     it("sends mapped IDs and distributes shortages once by persisted identity", async () => {
         expect((await run()).status).toBe("success");
         expect(mocks.send).toHaveBeenCalledOnce();

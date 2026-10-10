@@ -18,6 +18,45 @@ function group() {
 const response = { Code: 200, Status: "Nowe", AltumOrderID: 123, Message: "", Articles: { Article: [{ AltumArticleID: 900, Quantity: 5 }] } };
 
 describe("reconcileKontriShortages", () => {
+    it("validates membership in the saved request order rather than a newly sorted order", () => {
+        const reversed = [...products].reverse();
+        const { products: internal, ...payload } = createKontriOrder(reversed, "stable");
+        const saved = reversed.map((product, index) => ({
+            ...product,
+            kontriRequestLeaderId: "second",
+            ...(index === 0 ? { kontriRequestJson: JSON.stringify(payload), kontriRequestProductIds: ["second", "first"] } : {}),
+        }));
+        expect(reconcileKontriShortages(saved, "stable", response as any)).not.toBeNull();
+    });
+    it("accepts equivalent snapshot items with different JSON key order", () => {
+        const saved = group();
+        const payload = JSON.parse(saved[0].kontriRequestJson!);
+        payload.OrderedItems = payload.OrderedItems.map((item: { Amount: number; AltumArticleId: number; ClientOrderNumber: string }) => ({
+            ClientOrderNumber: item.ClientOrderNumber,
+            Amount: item.Amount,
+            AltumArticleId: item.AltumArticleId,
+        }));
+        saved[0].kontriRequestJson = JSON.stringify(payload);
+        expect(reconcileKontriShortages(saved, "stable", response as any)).not.toBeNull();
+    });
+    it.each([
+        [{ ...response, Status: "Kompletowane" }, "ORDER_STATUS"],
+        [{ ...response, Articles: undefined }, "ARTICLES_MISSING"],
+        [{ ...response, Articles: { Article: [{ AltumArticleID: 999, Quantity: 1 }] } }, "UNEXPECTED_API_ID"],
+        [{ ...response, Articles: { Article: [{ AltumArticleID: 900, Quantity: 6 }] } }, "EXCESS_QUANTITY"],
+    ])("reports the specific response rejection reason", (invalid, code) => {
+        const reasons: { code: string; detail: string }[] = [];
+        expect(reconcileKontriShortages(group(), "stable", invalid as any, (diagnostic) => reasons.push(diagnostic))).toBeNull();
+        expect(reasons).toHaveLength(1);
+        expect(reasons[0].code).toBe(code);
+        expect(reasons[0].detail.length).toBeGreaterThan(0);
+    });
+    it("distinguishes missing snapshots from membership mismatches", () => {
+        const reasons: { code: string; detail: string }[] = [];
+        reconcileKontriShortages(products, "stable", response as any, (diagnostic) => reasons.push(diagnostic));
+        reconcileKontriShortages(group().slice(0, 1), "stable", response as any, (diagnostic) => reasons.push(diagnostic));
+        expect(reasons.map((reason) => reason.code)).toEqual(["SNAPSHOT_MISSING", "MEMBERSHIP_MISMATCH"]);
+    });
     it("confirms zero shortages when summed quantities match", () => {
         expect([...reconcileKontriShortages(group(), "stable", response as any)!.values()]).toEqual([0, 0]);
     });

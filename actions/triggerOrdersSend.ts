@@ -125,7 +125,11 @@ export const sendOrders = async () => {
                     `Objednávku ${order.RefNumber} se nepodařilo bezpečně ověřit u Kontri. Žádný nový požadavek nebyl odeslán; je nutná ruční kontrola.`,
                 );
             }
-            const shortages = reconcileKontriShortages(order.products, order.RefNumber, response!);
+            let rejectionDetail = "";
+            const shortages = reconcileKontriShortages(order.products, order.RefNumber, response!, (diagnostic) => {
+                rejectionDetail = `[${diagnostic.code}] ${diagnostic.detail}`;
+                console.warn("Kontri shortage reconciliation rejected", { refNumber: order.RefNumber, ...diagnostic });
+            });
             const updated = await persistKontriProducts(
                 order.products.map((product) => ({
                     product,
@@ -143,16 +147,20 @@ export const sendOrders = async () => {
                 true,
                 !!shortages,
             );
-            if (!updated) continue;
+            if (!updated) {
+                messages.push(
+                    `Objednávka ${order.RefNumber}: výsledek nebyl zapsán (již potvrzená množství nebo souběžná agregace).${rejectionDetail ? ` Diagnostika: ${rejectionDetail}` : ""}`,
+                );
+                requiresReviewOrWaiting = true;
+                continue;
+            }
             if (shortages) {
                 messages.push(
                     `Objednávka ${order.RefNumber} byla dohledána bez znovuodeslání. Nedostatky byly automaticky doplněny (${[...shortages.values()].reduce((sum, quantity) => sum + quantity, 0)} ks).`,
                 );
                 retried = true;
             } else {
-                messages.push(
-                    `Objednávka ${order.RefNumber} byla dohledána bez znovuodeslání. Nedostatky zůstávají neznámé: odpověď není ověřitelná neagregovaná objednávka s úplným snapshotem.`,
-                );
+                messages.push(`Objednávka ${order.RefNumber} byla dohledána bez znovuodeslání. Nedostatky zůstávají neznámé: ${rejectionDetail}`);
                 requiresReviewOrWaiting = true;
             }
         }
