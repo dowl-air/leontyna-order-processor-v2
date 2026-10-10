@@ -16,7 +16,7 @@ vi.mock("firebase/firestore", () => ({
 vi.mock("./readKontriMapping", () => ({ readKontriMapping: mocks.mapping }));
 vi.mock("@/utils/formatDate", () => ({ formatToUTC: () => "2026-10-10" }));
 vi.mock("uuid", () => ({ v4: () => "12345678-1234-1234-1234-123456789012" }));
-import { getNewOrder } from "./getNewOrder";
+import { getNewOrder, prepareKontriRetry } from "./getNewOrder";
 
 const product = { code: "order", orderItemCode: "AK-5-100", orderItemEan: "00123", orderItemAmount: 2, AltumOrderID: null };
 const document = (data = product) => ({ id: "original-document", data: () => data });
@@ -43,6 +43,7 @@ describe("getNewOrder preparation", () => {
                 AltumOrderID: "1234567812341234",
                 kontriStatusCode: 90,
                 kontriReconciliationRequired: true,
+                kontriRequestJson: expect.any(String),
             }),
         );
         expect(product.orderItemCode).toBe("AK-5-100");
@@ -60,6 +61,41 @@ describe("getNewOrder preparation", () => {
     it("blocks historical references rather than silently replacing them", async () => {
         mocks.getDocs.mockResolvedValue({ empty: false, docs: [document({ ...product, RefNumber: "old-reference" } as typeof product)] });
         await expect(getNewOrder()).rejects.toThrow();
+        expect(mocks.update).not.toHaveBeenCalled();
+    });
+    it("prepares historical products with corrected API IDs and the same reference", async () => {
+        const historical = { ...product, fID: "original-document", RefNumber: "old-reference", kontriStatusCode: 0 };
+        mocks.get.mockResolvedValue({ exists: () => true, data: () => historical });
+        const request = await prepareKontriRetry([historical] as any, "old-reference");
+        expect(request.RefNumber).toBe("old-reference");
+        expect(request.OrderedItems[0].AltumArticleId).toBe(900);
+        expect(mocks.update).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ kontriRequestJson: expect.any(String) }));
+    });
+    it("replays the exact stored payload without reading a changed mapping", async () => {
+        const first = { ...product, fID: "original-document", RefNumber: "old-reference" };
+        mocks.get.mockResolvedValue({ exists: () => true, data: () => first });
+        await prepareKontriRetry([first] as any, "old-reference");
+        const stored = { ...first, ...mocks.update.mock.calls[0][1] };
+        const original = JSON.parse(stored.kontriRequestJson);
+        original.ShipmentCity = "Original city";
+        stored.kontriRequestJson = JSON.stringify(original);
+        mocks.get.mockResolvedValue({ exists: () => true, data: () => stored });
+        mocks.mapping.mockClear();
+        const replay = await prepareKontriRetry([stored], "old-reference");
+        const { products, ...payload } = replay;
+        expect(payload).toEqual(original);
+        expect(mocks.mapping).not.toHaveBeenCalled();
+    });
+    it("rejects retry after an order has been confirmed", async () => {
+        const historical = { ...product, fID: "original-document", RefNumber: "old-reference" };
+        mocks.get.mockResolvedValue({ exists: () => true, data: () => ({ ...historical, AltumOrderID: "999", kontriStatusCode: 100 }) });
+        await expect(prepareKontriRetry([historical] as any, "old-reference")).rejects.toThrow();
+        expect(mocks.update).not.toHaveBeenCalled();
+    });
+    it("rejects a group whose persisted payload leader is missing", async () => {
+        const remaining = { ...product, fID: "remaining", RefNumber: "stable", kontriRequestLeaderId: "missing" };
+        await expect(prepareKontriRetry([remaining] as any, "stable")).rejects.toThrow();
+        expect(mocks.mapping).not.toHaveBeenCalled();
         expect(mocks.update).not.toHaveBeenCalled();
     });
     it.each([80, 100, 400])("does not prepare a product in non-new status %s", async (kontriStatusCode) => {

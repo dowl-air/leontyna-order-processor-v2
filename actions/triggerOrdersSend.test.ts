@@ -4,6 +4,7 @@ import { createKontriOrder } from "@/utils/createKontriOrder";
 
 const mocks = vi.hoisted(() => ({
     newOrder: vi.fn(),
+    retry: vi.fn(),
     pending: vi.fn(),
     send: vi.fn(),
     update: vi.fn(),
@@ -11,7 +12,7 @@ const mocks = vi.hoisted(() => ({
     mail: vi.fn(),
     check: vi.fn(),
 }));
-vi.mock("@/db/getNewOrder", () => ({ getNewOrder: mocks.newOrder }));
+vi.mock("@/db/getNewOrder", () => ({ getNewOrder: mocks.newOrder, prepareKontriRetry: mocks.retry }));
 vi.mock("@/db/getUnconfirmedOrders", () => ({ getUnconfirmedOrders: mocks.pending }));
 vi.mock("@/db/persistKontriProducts", () => ({ persistKontriProducts: mocks.persist }));
 vi.mock("./sendOrder", () => ({ sendOrder: mocks.send }));
@@ -36,6 +37,7 @@ describe("sendOrders with persisted mapping", () => {
         vi.useFakeTimers();
         mocks.pending.mockResolvedValue([]);
         mocks.newOrder.mockResolvedValue(order);
+        mocks.retry.mockResolvedValue(order);
         mocks.update.mockResolvedValue(undefined);
         mocks.persist.mockImplementation(async (updates: { product: ShopOrder; fields: Partial<ShopOrder> }[]) => {
             for (const update of updates) await mocks.update(update.product, update.fields);
@@ -59,11 +61,17 @@ describe("sendOrders with persisted mapping", () => {
         expect(mocks.update).toHaveBeenCalledWith(products[0], expect.objectContaining({ AltumOrderID: "123", RefNumber: "stable", shortage: 1 }));
         expect(mocks.update).toHaveBeenCalledWith(products[1], expect.objectContaining({ shortage: 3 }));
     });
-    it.each([0, 90, 99, 10])("does not claim success or replace the snapshot for response %s", async (Code) => {
+    it.each([0, 10])("does not claim success or replace the snapshot for response %s", async (Code) => {
         mocks.send.mockResolvedValue({ Code });
         expect((await run()).status).toBe("error");
         expect(mocks.update).not.toHaveBeenCalled();
         expect(mocks.mail).toHaveBeenCalledOnce();
+    });
+    it.each([90, 99])("keeps queued response %s available for a later retry without an error email", async (Code) => {
+        mocks.send.mockResolvedValue({ Code });
+        expect((await run()).status).toBe("info");
+        expect(mocks.update).not.toHaveBeenCalled();
+        expect(mocks.mail).not.toHaveBeenCalled();
     });
     it("does not resend after a timeout, and reconciles by the same reference", async () => {
         mocks.send.mockRejectedValue(new Error("network timeout"));
@@ -77,14 +85,43 @@ describe("sendOrders with persisted mapping", () => {
         expect(mocks.update).toHaveBeenCalledWith(products[0], expect.objectContaining({ AltumOrderID: "123", kontriReconciliationRequired: true }));
         expect(mocks.update.mock.calls[0][1]).not.toHaveProperty("shortage");
     });
-    it("blocks all sending when a prior request cannot be safely reconciled", async () => {
-        mocks.pending.mockResolvedValue([{ RefNumber: "old", products }]);
+    it("retries a referenced request after a failed lookup instead of blocking on its reference", async () => {
+        mocks.pending.mockResolvedValue([{ RefNumber: "stable", products }]);
+        mocks.newOrder.mockResolvedValue(null);
         mocks.check.mockResolvedValue({ Code: 500, Message: "unknown" });
+        expect((await run()).status).toBe("success");
+        expect(mocks.retry).toHaveBeenCalledWith(products, "stable");
+        expect(mocks.send).toHaveBeenCalledOnce();
+        expect(mocks.send.mock.calls[0][0].RefNumber).toBe("stable");
+        expect(mocks.mail).not.toHaveBeenCalled();
+    });
+    it("retries after a thrown lookup and stops without replacing a conflicting reference", async () => {
+        mocks.pending.mockResolvedValue([{ RefNumber: "stable", products }]);
+        mocks.check.mockRejectedValue(new Error("network"));
+        mocks.send.mockResolvedValue({ Code: 110 });
         expect((await run()).status).toBe("error");
-        expect(mocks.send).not.toHaveBeenCalled();
+        expect(mocks.send).toHaveBeenCalledOnce();
         expect(mocks.newOrder).not.toHaveBeenCalled();
-        expect(mocks.update).not.toHaveBeenCalled();
+        expect(mocks.update).toHaveBeenCalledWith(products[0], expect.objectContaining({ kontriStatusCode: 110 }));
         expect(mocks.mail).toHaveBeenCalledOnce();
+    });
+    it("replays after a timeout on a later run when lookup still cannot find the request", async () => {
+        mocks.send.mockRejectedValueOnce(new Error("timeout"));
+        expect((await run()).status).toBe("error");
+        mocks.pending.mockResolvedValue([{ RefNumber: "stable", products }]);
+        mocks.newOrder.mockResolvedValue(null);
+        mocks.check.mockResolvedValue({ Code: 60 });
+        expect((await run()).status).toBe("success");
+        expect(mocks.send).toHaveBeenCalledTimes(2);
+        expect(mocks.send.mock.calls[1][0]).toEqual(mocks.send.mock.calls[0][0]);
+    });
+    it("reports a queued retry as info, not confirmed success", async () => {
+        mocks.pending.mockResolvedValue([{ RefNumber: "stable", products }]);
+        mocks.check.mockResolvedValue({ Code: 60 });
+        mocks.send.mockResolvedValue({ Code: 99 });
+        mocks.newOrder.mockResolvedValue(null);
+        expect((await run()).status).toBe("info");
+        expect(mocks.mail).not.toHaveBeenCalled();
     });
     it("does not confirm a status response missing the real Kontri order ID", async () => {
         mocks.pending.mockResolvedValue([{ RefNumber: "old", products }]);

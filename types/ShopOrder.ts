@@ -21,6 +21,9 @@ type ShopOrder = {
     kontriApiId?: string;
     kontriMappingVersion?: string;
     kontriOrderedAmount?: number;
+    kontriRequestJson?: string;
+    kontriRequestProductIds?: string[];
+    kontriRequestLeaderId?: string;
     kontriReconciliationRequired?: boolean;
 };
 

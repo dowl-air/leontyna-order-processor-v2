@@ -76,7 +76,7 @@ The diagram shows code-level calls and configured integrations. Feed URLs and th
 `vercel.json` schedules `GET /api/cron` every ten minutes. `app/api/cron/route.ts` compares the request's `Authorization` header with `Bearer ${CRON_SECRET}`. An authorized request sequentially runs:
 
 1. `actions/feedsDownload.ts` finds the latest stored product date, requests both Shoptet CSV feeds with that update time, and skips rows when a present item type is not `product`, a present item code does not start with `AK`, or a present supplier is not `Kontri.pl`; accepted rows are passed to `db/addProduct.ts`.
-2. If import returned `success`, `actions/triggerOrdersSend.ts` reconciles unconfirmed and historically referenced products without replaying requests, then prepares and sends at most one new mapped order if reconciliation succeeded. Otherwise this step is marked `skipped`.
+2. If import returned `success`, `actions/triggerOrdersSend.ts` looks up unconfirmed/historical references and retries unverified groups with their preserved references. Stored payloads replay unchanged; old groups without payloads migrate once to current mapping. Failed retries stop new submission; otherwise at most one new mapped order is prepared and sent. An unsuccessful import marks this entire step `skipped`.
 3. `actions/updateOrdersState.ts` checks state `100` products from the last seven days of the Shoptet order date, including the cutoff, using `actions/checkOrderRefNumber.ts`.
 4. The same updater checks aggregated/completing states `300` and `301`.
 
@@ -84,11 +84,11 @@ The route returns `status`, `message`, and individual `results` (`feeds`, `sendO
 
 ### Order submission
 
-- `db/getNewOrder.ts` reads products with `AltumOrderID == null`, rejects historical references/non-new states, resolves IDs using one active cache, and atomically claims at most 450 products with a stable reference and API ID/quantity snapshot before returning a request.
+- `db/getNewOrder.ts` reads new products with `AltumOrderID == null`, resolves IDs using one active cache, and atomically claims at most 450 products with a stable reference, API ID/quantity, and complete request snapshot. Its `prepareKontriRetry` handles historical groups separately with their original reference. The first document stores request JSON and ordered document IDs; every member stores its leader ID. Existing snapshots are validated against membership and item snapshots and replayed without remapping.
 - `utils/createKontriOrder.ts` uses only persisted `kontriApiId` and `kontriOrderedAmount`, with validated ID/reference limits. Original codes are not changed or used as fallback IDs.
 - `actions/sendOrder.ts` POSTs the request to `GCP_SERVER_ADDRESS` as JSON.
 - `actions/triggerOrdersSend.ts` matches shortages by persisted API ID, allocates shared deficits once with older-order priority, and persists responses through `db/persistKontriProducts.ts`. Result transactions validate references and order identity and protect known quantities/advanced states. Safe errors and uncertain quantities generate email through `actions/sendMail.ts`.
-- `db/getUnconfirmedOrders.ts` selects status `90` plus historical pending products with references, groups by `RefNumber`, and returns reconciliation groups, not resend requests. Successful lookups attach the real order ID and flag manual quantity checks; unsuccessful lookups block new sending.
+- `db/getUnconfirmedOrders.ts` selects status `90` plus historical pending products with references and groups by `RefNumber`. Successful lookups attach the real order ID and flag manual quantity checks; unsuccessful lookups trigger `prepareKontriRetry` and POST with the same reference. Codes `90`/`99` remain queued; `110` marks a retained reference conflict requiring operator review, not a new reference.
 
 ### Read-only mapping preview
 
@@ -132,13 +132,14 @@ Firestore is initialized in `db/init.ts` using the Firebase web SDK's Firestore 
 
 Statuses written or interpreted in source include:
 
-| Code                | Source behavior                                                                                            |
-| ------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `0`                 | Imported item; not yet submitted (`db/addProduct.ts`).                                                     |
-| `80`                | Kontri response marks products unavailable (`actions/triggerOrdersSend.ts`).                               |
-| `90`                | Prepared or uncertain request; later selected for status lookup, never automatic POST replay.              |
-| `100`               | Submitted/ordered response; includes Kontri order fields and shortage quantity when present.               |
-| `300`, `301`, `400` | Set by the status updater after SOAP status checks; specific mapping is in `actions/updateOrdersState.ts`. |
+| Code                | Source behavior                                                                                               |
+| ------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `0`                 | Imported item; not yet submitted (`db/addProduct.ts`).                                                        |
+| `80`                | Kontri response marks products unavailable (`actions/triggerOrdersSend.ts`).                                  |
+| `90`                | Prepared/uncertain request; later looked up and retried with the same stored payload/reference if unverified. |
+| `110`               | Reference conflict from Kontri; retained for manual review, excluded from automatic retry.                    |
+| `100`               | Submitted/ordered response; includes Kontri order fields and shortage quantity when present.                  |
+| `300`, `301`, `400` | Set by the status updater after SOAP status checks; specific mapping is in `actions/updateOrdersState.ts`.    |
 
 The enum values for the external order status are in `types/api/CheckOrderResponse.ts`. Firestore security rules, indexes, retention, and operational backup configuration are not present in this repository.
 

@@ -98,7 +98,7 @@ npm test -- utils/resolveKontriProduct.test.ts db/readKontriMapping.test.ts db/g
 ## Mapped Order Submission
 
 New orders resolve all pending products against one validated active cache before submission.
-A missing cache, blocked match, historical reference, non-new product status, invalid quantity,
+A missing cache, blocked match, non-new product status, invalid quantity,
 or group larger than 450 products prevents preparation of the entire group. Original Shoptet
 codes and Firestore document IDs remain unchanged. API IDs must fit a positive 32-bit integer;
 references must not exceed the documented 16 characters.
@@ -111,6 +111,12 @@ Before the first POST, a Firestore transaction rechecks each product and persist
 - `RefNumber`: one stable reference shared by the group.
 - `AltumOrderID`: the reference placeholder until the real Kontri ID is confirmed.
 - Status `90` and `kontriReconciliationRequired: true`: the request is not yet confirmed.
+- `kontriRequestJson` and `kontriRequestProductIds` on the first product in document-ID order:
+  the complete outbound JSON payload and its ordered document membership.
+- `kontriRequestLeaderId` on every product: the document containing that payload.
+
+The request JSON excludes internal product data and credentials and is limited to 250 KiB.
+These fields use the existing product collection; no new collection is required.
 
 The transaction prevents concurrent senders from claiming the same products. The request is sent
 only after successful persistence and uses the stored ID and quantity, never a code-based fallback.
@@ -121,19 +127,30 @@ shortage entries, or impossible shortage quantities prevent confirmation writes 
 An explicit empty shortage list confirms zero; missing/null details leave quantities uncertain.
 
 On a timeout, uncertain response, or failed confirmation write, the reference and snapshot remain
-stored. Subsequent runs **do not POST the request again**. They query Kontri by the same reference,
-including historical pending products with references but no API snapshot. A successful status
+stored. Subsequent runs query Kontri by the same reference, including historical pending products.
+If lookup fails or does not return code `200`, they **retry the stored request with the same
+reference**, once per group in that run. No new reference is generated after a timeout.
+A successful status
 response with a real Kontri ID links the products to that order and marks quantities for manual
 verification. The UI shows **Ověřit** instead of a shortage number, and email explains the issue.
 The persisted API ID is shown below the original product code. Late reconciliation cannot replace
 known shortages, and a late original response cannot regress an advanced order status.
 
-If a prior request cannot be verified, no new order is sent and operator review is required.
-Do not clear historical references merely because a lookup fails: the request may still be queued.
-The supplied Kontri documentation permits replaying an identical request and describes codes
-`90`, `99`, and `101`, but this implementation deliberately uses status lookup because it does not
-persist the complete original shipping/payment payload for exact replay. Cache updates never
-re-resolve an already submitted product. Unavailable response `80` requires manual review.
+Historical referenced products without a stored request are prepared once with the current
+validated mapping and the existing reference. This deliberately allows recovery from the old
+incorrect-ID requests; it is not claimed to be identical to their original payload. The corrected
+payload is persisted before POST and used unchanged on subsequent retries. New and migrated
+snapshots include shipping/payment fields; cache changes never re-resolve a stored request.
+Missing/mismatched membership or concurrently confirmed/changed products prevent retry.
+
+Codes `90`/`99` mean queued processing and return `info`, without error email or confirmation
+writes. Later runs look up or replay the same request. Code `101` is handled like `100`.
+Code `110` marks products with status `110` and retains the reference and payload for manual
+conflict resolution; it does not generate another reference or automatically retry that group.
+Code `80` also requires manual review. Other errors and timeouts retain status `90` for a later
+attempt and send safe error notifications. A failed retry stops new submission in that run;
+queued retries can coexist with new orders, and the combined result remains `info`.
+Do not clear references automatically: an old or queued request may already exist at Kontri.
 
 The full Firestore SDK is used for preparation and result transactions; product imports and
 ordinary reads/status updates still use Lite. Security Rules must allow transaction reads and

@@ -1,6 +1,6 @@
 "use server";
 
-import { getNewOrder } from "@/db/getNewOrder";
+import { getNewOrder, prepareKontriRetry } from "@/db/getNewOrder";
 import { getUnconfirmedOrders } from "@/db/getUnconfirmedOrders";
 import { KontriOrder } from "@/types/KontriOrder";
 import { sendOrder } from "./sendOrder";
@@ -31,7 +31,7 @@ const sendOrderHandler = async (orderObject: KontriOrder) => {
         const { products, ...orderReq } = orderObject;
         const refNumber = orderObject.RefNumber;
         const orderResp = await sendOrder(orderReq);
-        switch (orderResp.Code) {
+        switch (Number(orderResp.Code)) {
             case 100:
             case 101:
                 if (!validOrderId(orderResp.AltumOrderID)) throw new Error("Missing confirmed Kontri order ID.");
@@ -63,14 +63,34 @@ const sendOrderHandler = async (orderObject: KontriOrder) => {
                     refNumber,
                 );
                 return orderError(`Kontri odmítlo dostupnost položek objednávky ${refNumber}. Vyžaduje ruční kontrolu.`);
+            case 90:
+            case 99:
+                return {
+                    status: "info",
+                    message: `Kontri objednávka ${refNumber} se zpracovává. Další běh ji dohledá nebo zopakuje stejný požadavek.`,
+                };
+            case 110:
+                await persistKontriProducts(
+                    products.map((product) => ({
+                        product,
+                        fields: {
+                            kontriStatusCode: 110,
+                            kontriStatusName: "Konflikt reference",
+                        },
+                    })),
+                    refNumber,
+                );
+                return orderError(
+                    `Kontri reference ${refNumber} patří jinému požadavku (110). Reference nebyla změněna; konflikt vyžaduje ruční kontrolu.`,
+                );
             default:
                 return orderError(
-                    `Kontri objednávka ${refNumber} nebyla potvrzena. Reference a použitá API ID zůstávají uložené; další běh pouze ověří její existenci.`,
+                    `Kontri objednávka ${refNumber} nebyla potvrzena (kód ${Number(orderResp.Code)}). Reference a požadavek zůstávají uložené pro další pokus.`,
                 );
         }
     } catch {
         return orderError(
-            `Odeslání nebo uložení odpovědi objednávky ${orderObject.RefNumber} selhalo. Reference zůstává zachovaná; automatické znovuodeslání je zablokované.`,
+            `Odeslání nebo uložení odpovědi objednávky ${orderObject.RefNumber} selhalo. Další běh objednávku dohledá nebo zopakuje uložený požadavek se stejnou referencí.`,
         );
     }
 };
@@ -78,11 +98,23 @@ const sendOrderHandler = async (orderObject: KontriOrder) => {
 export const sendOrders = async () => {
     try {
         const messages: string[] = [];
+        let retried = false;
+        let requiresReviewOrWaiting = false;
         const uncertainOrders = await getUnconfirmedOrders();
         for (const order of uncertainOrders) {
             await new Promise((resolve) => setTimeout(resolve, 2100));
-            const response = await checkOrderByRefNumber(order.RefNumber);
-            if (Number(response?.Code) !== 200 || !validOrderId(response.AltumOrderID)) {
+            const response = await checkOrderByRefNumber(order.RefNumber).catch(() => null);
+            if (Number(response?.Code) !== 200) {
+                const retry = await prepareKontriRetry(order.products, order.RefNumber);
+                await new Promise((resolve) => setTimeout(resolve, 2100));
+                const result = await sendOrderHandler(retry);
+                retried = true;
+                if (result.status === "info") requiresReviewOrWaiting = true;
+                messages.push(result.message);
+                if (result.status === "error") return { ...result, message: messages.join(" | ") };
+                continue;
+            }
+            if (!validOrderId(response!.AltumOrderID)) {
                 return orderError(
                     `Objednávku ${order.RefNumber} se nepodařilo bezpečně ověřit u Kontri. Žádný nový požadavek nebyl odeslán; je nutná ruční kontrola.`,
                 );
@@ -91,28 +123,36 @@ export const sendOrders = async () => {
                 order.products.map((product) => ({
                     product,
                     fields: {
-                        AltumOrderID: String(response.AltumOrderID),
+                        AltumOrderID: String(response!.AltumOrderID),
                         RefNumber: order.RefNumber,
                         kontriStatusCode: 100,
                         kontriStatusName: "Objednáno",
                         kontriReconciliationRequired: true,
-                        ...(response.AltumOrderNumber ? { kontriOrderCode: response.AltumOrderNumber } : {}),
+                        ...(response!.AltumOrderNumber ? { kontriOrderCode: response!.AltumOrderNumber } : {}),
                     },
                 })),
                 order.RefNumber,
                 true,
             );
             if (!updated) continue;
-            const message = `Objednávka ${order.RefNumber} byla dohledána u Kontri (${response.AltumOrderID}) bez znovuodeslání. Nedostatky a množství vyžadují ruční kontrolu.`;
+            const message = `Objednávka ${order.RefNumber} byla dohledána u Kontri (${response!.AltumOrderID}) bez znovuodeslání. Nedostatky a množství vyžadují ruční kontrolu.`;
             messages.push(message + (await notifyOrderProblem(message)));
+            requiresReviewOrWaiting = true;
         }
         const order = await getNewOrder();
         if (order) {
             await new Promise((resolve) => setTimeout(resolve, 2100));
             const result = await sendOrderHandler(order);
-            return { ...result, message: [...messages, result.message].join(" | ") };
+            return {
+                ...result,
+                status: result.status === "success" && requiresReviewOrWaiting ? "info" : result.status,
+                message: [...messages, result.message].join(" | "),
+            };
         }
-        return { status: "info", message: messages.join(" | ") || "Žádné nové produkty k odeslání." };
+        return {
+            status: retried && !requiresReviewOrWaiting ? "success" : "info",
+            message: messages.join(" | ") || "Žádné nové produkty k odeslání.",
+        };
     } catch {
         return orderError(
             "Příprava nebo ověření Kontri objednávek selhalo. Zkontrolujte náhled párování a historické reference; nový požadavek nebyl bezpečně připraven.",
