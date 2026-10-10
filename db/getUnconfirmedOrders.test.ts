@@ -30,6 +30,9 @@ describe("getUnconfirmedOrders", () => {
         expect(groups).toHaveLength(1);
         expect(groups[0].products.map((product) => product.fID)).toEqual(["unknown", "known"]);
         expect(mocks.getDocs).toHaveBeenLastCalledWith(expect.arrayContaining([["RefNumber", "==", "same"]]));
+        for (const [query] of mocks.getDocs.mock.calls) {
+            expect(query).toContainEqual(["date", ">=", expect.any(Date)]);
+        }
     });
     it("groups uncertain and historical products by stable reference without rebuilding requests", async () => {
         mocks.getDocs.mockResolvedValueOnce({ docs: [document("first", { RefNumber: "same", AltumOrderID: "placeholder", kontriStatusCode: 90 })] });
@@ -46,5 +49,18 @@ describe("getUnconfirmedOrders", () => {
         mocks.getDocs.mockResolvedValueOnce({ docs: [document("bad", { kontriStatusCode: 90 })] });
         mocks.getDocs.mockResolvedValueOnce({ docs: [] });
         await expect(getUnconfirmedOrders()).rejects.toThrow();
+    });
+    it.each([true, false])("skips a stored request truncated by the history window (leader present: %s)", async (leaderPresent) => {
+        mocks.getDocs.mockResolvedValueOnce({
+            docs: [
+                document("recent", {
+                    RefNumber: "same",
+                    kontriStatusCode: 90,
+                    kontriRequestLeaderId: leaderPresent ? "recent" : "old-leader",
+                    ...(leaderPresent ? { kontriRequestJson: "{}", kontriRequestProductIds: ["recent", "expired"] } : {}),
+                }),
+            ],
+        });
+        expect(await getUnconfirmedOrders()).toEqual([]);
     });
 });

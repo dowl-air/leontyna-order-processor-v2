@@ -33,11 +33,11 @@ describe("unfinished order product queries", () => {
     });
     afterEach(() => vi.useRealTimers());
 
-    it("limits status 100 to the last seven days including the cutoff", async () => {
+    it("limits status 100 to the last five days including the cutoff", async () => {
         await getOrderedProducts();
         expect(mocks.where.mock.calls).toEqual([
             ["kontriStatusCode", "==", 100],
-            ["date", ">=", new Date("2026-10-03T12:00:00Z")],
+            ["date", ">=", new Date("2026-10-05T12:00:00Z")],
         ]);
         expect(mocks.orderBy).toHaveBeenCalledWith("date", "asc");
         expect(mocks.orderBy).toHaveBeenCalledWith("__name__", "asc");
@@ -46,7 +46,10 @@ describe("unfinished order product queries", () => {
     it("selects both aggregated states 300 and 301", async () => {
         mocks.getDocs.mockResolvedValue(snapshot([document("first", 300), document("second", 301)]));
         const products = await getNotSentProducts();
-        expect(mocks.where.mock.calls).toEqual([["kontriStatusCode", "in", [300, 301]]]);
+        expect(mocks.where.mock.calls).toEqual([
+            ["kontriStatusCode", "in", [300, 301]],
+            ["date", ">=", new Date("2026-10-05T12:00:00Z")],
+        ]);
         expect(products.map((product) => product.kontriStatusCode)).toEqual([300, 301]);
         expect(products[0].date).toEqual(oldDate);
     });

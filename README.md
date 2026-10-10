@@ -23,6 +23,19 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/basic-features/font-optimization) to automatically optimize and load Inter, a custom Google Font.
 
+## Order History Window
+
+Retrospective order checks use the shared five-day window from
+`utils/orderHistory.ts`: Shoptet `date >= now - 5 days`, including the exact cutoff.
+This applies to uncertain-reference lookups/retries, unknown shortage reconciliation, and status
+checks for `100`, `300`, and `301`. It does not limit new order submission, mapping preview,
+table history, or the Shoptet import checkpoint. Older records remain stored and visible;
+retrospective checks leave them untouched. References and statuses are not cleared.
+Saved requests whose complete membership is no longer inside the window are skipped with a safe
+server warning; they must not be replayed partially. No old members are fetched to bypass the limit.
+Firestore may require composite indexes for the added equality/status/reference plus date filters;
+provision indexes reported by Firestore in the deployment, without removing the date filter.
+
 ## Server Transports
 
 Shoptet CSV imports use native `fetch` (`cache: no-store`) and a Node stream passed to the
@@ -172,7 +185,8 @@ If lookup fails or does not return code `200`, they **retry the stored request w
 reference**, once per group in that run. No new reference is generated after a timeout.
 A successful status response with a real Kontri ID links the products without resending them.
 The UI shows **Neznámé** until shortages are confirmed. Subsequent submission/cron runs also
-select confirmed status `100` products with unknown quantities and load their whole reference group.
+select confirmed status `100` products with unknown quantities inside the five-day window.
+Reference groups must have their complete saved membership inside the same window.
 For code `200` and status `Nowe`, `Articles.Article` quantities are summed by API ID and compared
 with the complete immutable request snapshot. Missing requested IDs in an explicit article list
 count as shortages; shared deficits use the same older-order priority allocation. Successful
@@ -256,8 +270,8 @@ returns HTTP 401 without executing operations. An authorized run performs:
 
 1. Import the CZ/SK Shoptet feeds.
 2. Reconcile and submit orders only if the import returned `success`; otherwise mark this step `skipped`.
-3. Check ordered products with status `100` whose Shoptet order date is within the last seven days (including the cutoff).
-4. Check both aggregated/completing states `300` and `301`.
+3. Check ordered products with status `100` whose Shoptet order date is within the last five days (including the cutoff).
+4. Check both aggregated/completing states `300` and `301` within the same five-day window.
 
 Both status passes run even if an earlier operation returns an error or throws. The response
 contains `status`, `message`, and `results` with `feeds`, `sendOrders`, `newOrders`, and
@@ -269,12 +283,11 @@ result, including no new orders or required manual quantity review, is not treat
 The JSON results must still be inspected for operational warnings. Thrown exceptions are not
 included in the response. The endpoint no longer reports successful submission unconditionally.
 
-Status `100` queries use `date >= now - 7 days`, ordered by date and then document ID;
-this is the Shoptet order date, not the Kontri submission time. Older state `100` products
-are intentionally no longer checked, even if they were submitted recently. States `300`/`301`
-have no date cutoff and order by document ID. Both queries load all 1000-document pages within
+Status `100`, `300`, and `301` queries use `date >= now - 5 days`, ordered by date and then
+document ID; this is the Shoptet order date, not the Kontri submission time. Older products
+are intentionally no longer checked, even if they were submitted recently. Both queries load all 1000-document pages within
 their filters before grouping by `RefNumber`; the page size is not a total product cap.
-The state `100` query requires the corresponding Firestore status/date index.
+The status queries require the corresponding Firestore status/date indexes.
 Status checks wait 2.5 seconds between
 groups, continue after unchanged states or failures, and require API result code `200` and a
 recognized status before writing. Unknown/missing statuses and API errors leave that group's

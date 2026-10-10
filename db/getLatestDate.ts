@@ -1,5 +1,5 @@
 "use server";
-import { collection, getDocs, limit, orderBy, query, Timestamp } from "firebase/firestore/lite"
+import { collection, getDocs, limit, orderBy, query, Timestamp } from "firebase/firestore/lite";
 import { db } from "./init";
 
 export const getLatestDate = async () => {
@@ -11,4 +11,4 @@ export const getLatestDate = async () => {
         date = tm.toDate();
     });
     return date;
-}
+};
