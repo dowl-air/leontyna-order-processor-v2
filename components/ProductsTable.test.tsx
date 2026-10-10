@@ -5,7 +5,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import ShopOrder from "@/types/ShopOrder";
 
 vi.mock("@/actions/downloadKontriFeed", () => ({ downloadKontriFeed: vi.fn() }));
-vi.mock("./KontriMappingPreviewButton", () => ({ KontriMappingPreviewButton: () => null }));
 vi.mock("@/actions/feedsDownload", () => ({ feedsDownload: vi.fn() }));
 vi.mock("@/actions/checkOrder", () => ({ checkOrder: vi.fn() }));
 vi.mock("@/actions/triggerOrdersSend", () => ({ sendOrders: vi.fn() }));
@@ -32,6 +31,13 @@ const product = {
 
 describe("ProductsTable shortage certainty", () => {
     afterEach(() => vi.unstubAllGlobals());
+    it("does not offer the removed mapping preview", () => {
+        vi.stubGlobal("React", React);
+        const html = renderToStaticMarkup(<ProductsTable initialShopOrders={[product]} />);
+        expect(html).not.toContain("Náhled párování");
+        expect(html).toContain("Vynutit stažení Kontri feedu");
+        expect(html).toContain("Vynutit odeslání objednávek");
+    });
     it("shows unknown instead of a zero shortage before quantity confirmation", () => {
         vi.stubGlobal("React", React);
         const html = renderToStaticMarkup(<ProductsTable initialShopOrders={[{ ...product, kontriReconciliationRequired: true }]} />);

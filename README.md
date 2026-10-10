@@ -28,7 +28,7 @@ This project uses [`next/font`](https://nextjs.org/docs/basic-features/font-opti
 Retrospective order checks use the shared five-day window from
 `utils/orderHistory.ts`: Shoptet `date >= now - 5 days`, including the exact cutoff.
 This applies to uncertain-reference lookups/retries, unknown shortage reconciliation, and status
-checks for `100`, `300`, and `301`. It does not limit new order submission, mapping preview,
+checks for `100`, `300`, and `301`. It does not limit new order submission,
 table history, or the Shoptet import checkpoint. Older records remain stored and visible;
 retrospective checks leave them untouched. References and statuses are not cleared.
 Saved requests whose complete membership is no longer inside the window are skipped with a safe
@@ -114,32 +114,19 @@ Run focused tests with:
 npm test -- utils/kontriFeed.test.ts actions/downloadKontriFeed.test.ts db/kontriMapping.test.ts actions/sendMail.test.ts
 ```
 
-## Kontri Mapping Preview
+## Mapped Order Submission
 
-The **Náhled párování** button reads all products with `AltumOrderID == null` and one active
-mapping version. It does not write products, generate references, submit orders, refresh the feed,
-or send emails. Cache read failures are displayed in the dialog. The reader validates chunk indexes,
-record count, record fields, uniqueness, and content hash before resolving any products.
-
-The preview compares the last identifier in `AK-<model>-<identifier>` with both catalog and API IDs.
+The resolver compares the last identifier in `AK-<model>-<identifier>` with both catalog and API IDs.
 When EAN is present, it must match the candidate and can disambiguate overlapping ID namespaces.
 EAN leading zeros are preserved. A unique ID without EAN is allowed. EAN-only fallback is allowed
 only when the identifier is absent from both indexes. Invalid codes, unknown products, ID/EAN
 conflicts, and ambiguous matches are blocked instead of choosing an arbitrary record.
 
-The dialog displays original codes, EANs, resolved API IDs, matching sources or blocking reasons,
-and the cache version. Blocked rows appear first; search, a blocked-only filter, and 50-row pages
-are available. A matched row confirms product identity only, not order eligibility or retry safety.
-Order submission uses the same resolver independently; it never submits the preview result.
-The preview remains available for diagnostics and does not authorize or prepare orders.
-
-Run the preview tests with:
+Run the resolver and cache reader tests with:
 
 ```sh
-npm test -- utils/resolveKontriProduct.test.ts db/readKontriMapping.test.ts db/getPendingProducts.test.ts actions/previewKontriMapping.test.ts
+npm test -- utils/resolveKontriProduct.test.ts db/readKontriMapping.test.ts
 ```
-
-## Mapped Order Submission
 
 New orders resolve all pending products against one validated active cache before submission.
 A missing cache, blocked match, non-new product status, invalid quantity,

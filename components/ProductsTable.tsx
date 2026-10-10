@@ -2,7 +2,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Download } from "lucide-react";
 import { downloadKontriFeed } from "@/actions/downloadKontriFeed";
-import { KontriMappingPreviewButton } from "./KontriMappingPreviewButton";
 
 import ShopOrder from "@/types/ShopOrder";
 import { TABLE_ITEMS_FETCH_COUNT } from "@/utils/constants";
@@ -186,7 +185,6 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
                         {kontriFeedLoading ? <span className="loading loading-spinner loading-xs" /> : <Download size={18} aria-hidden="true" />}
                         Vynutit stažení Kontri feedu
                     </button>
-                    <KontriMappingPreviewButton />
                     <button className="btn btn-sm md:btn-md btn-outline btn-primary" onClick={triggerOrders}>
                         Vynutit odeslání objednávek
                     </button>
