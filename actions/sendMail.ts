@@ -14,21 +14,11 @@ const transporter = nodemailer.createTransport({
     },
 });
 
-export async function sendMail({
-    sendTo,
-    subject,
-    text,
-    html,
-}: {
-    sendTo?: string;
-    subject: string;
-    text: string;
-    html?: string;
-}) {
+export async function sendMail({ sendTo, subject, text, html }: { sendTo?: string; subject: string; text: string; html?: string }) {
     try {
-        const isVerified = await transporter.verify();
-    } catch (error) {
-        console.error("Something Went Wrong", SMTP_SERVER_USERNAME, SMTP_SERVER_PASSWORD, error);
+        await transporter.verify();
+    } catch {
+        console.error("SMTP transport verification failed.");
         return;
     }
     const info = await transporter.sendMail({

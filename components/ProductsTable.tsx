@@ -1,5 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Download } from "lucide-react";
+import { downloadKontriFeed } from "@/actions/downloadKontriFeed";
 
 import ShopOrder from "@/types/ShopOrder";
 import { TABLE_ITEMS_FETCH_COUNT } from "@/utils/constants";
@@ -20,6 +22,7 @@ type Message = {
 const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }) => {
     const [shopOrders, setShopOrders] = useState(initialShopOrders);
     const [loading, setLoading] = useState(false);
+    const [kontriFeedLoading, setKontriFeedLoading] = useState(false);
     const [page, setPage] = useState(1);
     const [messages, setMessages] = useState<Message[]>([]);
     const [modalOrder, setModalOrder] = useState<OrderResponseResult | null>(null);
@@ -48,7 +51,7 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
 
             if (node) observer.current.observe(node);
         },
-        [loading]
+        [loading],
     );
 
     const openModal = () => {
@@ -86,6 +89,18 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
         }
         await refreshShopOrders();
         setLoading(false);
+    };
+
+    const triggerKontriFeed = async () => {
+        setKontriFeedLoading(true);
+        try {
+            const response = await downloadKontriFeed();
+            setMessages((previous) => [...previous, { message: response.message, type: response.status as Message["type"] }]);
+        } catch {
+            setMessages((previous) => [...previous, { message: "Aktualizace Kontri feedu selhala.", type: "error" }]);
+        } finally {
+            setKontriFeedLoading(false);
+        }
     };
 
     useEffect(() => {
@@ -144,6 +159,15 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
                     </button>
                     <button className="btn btn-sm md:btn-md btn-outline btn-primary" onClick={triggerFeedDown}>
                         Vynutit stažení feedů
+                    </button>
+                    <button
+                        className="btn btn-sm md:btn-md btn-outline btn-primary whitespace-normal"
+                        disabled={kontriFeedLoading}
+                        aria-busy={kontriFeedLoading}
+                        onClick={triggerKontriFeed}
+                    >
+                        {kontriFeedLoading ? <span className="loading loading-spinner loading-xs" /> : <Download size={18} aria-hidden="true" />}
+                        Vynutit stažení Kontri feedu
                     </button>
                     <button className="btn btn-sm md:btn-md btn-outline btn-primary" onClick={triggerOrders}>
                         Vynutit odeslání objednávek
