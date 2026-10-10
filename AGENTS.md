@@ -63,6 +63,8 @@ The application reads these environment variables: `FIREBASE_API_KEY`, `SHOPTET_
 
 ## Agent Behavior
 
+- Reconciliation may ignore supplemental API article `53086` only when absent from the saved request; still validate its quantity. The operator reports it in every Kontri order, but its shipping/service meaning is not independently confirmed. Explicitly requested `53086` must be reconciled normally; all other unexpected IDs remain blocked. Do not change payloads or snapshots for this exception.
+
 - Shortage reconciliation must use saved request document order and semantic item values, not newly sorted membership or JSON key order. Keep rejection reason codes/details visible in action results and safe server logs, including when persistence makes no writes. Never log raw request/response payloads or credentials for diagnosis.
 
 - Read the relevant action, data-access module, and caller before changing a flow; keep changes focused and preserve the existing boundaries.

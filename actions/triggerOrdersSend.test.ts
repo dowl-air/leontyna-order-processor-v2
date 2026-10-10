@@ -72,7 +72,12 @@ describe("sendOrders with persisted mapping", () => {
             Code: 200,
             Status: "Nowe",
             AltumOrderID: 123,
-            Articles: { Article: [{ AltumArticleID: 900, Quantity: quantity }] },
+            Articles: {
+                Article: [
+                    { AltumArticleID: 900, Quantity: quantity },
+                    { AltumArticleID: 53086, Quantity: 1 },
+                ],
+            },
         });
         expect((await run()).status).toBe("success");
         expect(mocks.send).not.toHaveBeenCalled();

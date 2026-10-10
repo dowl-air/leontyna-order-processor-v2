@@ -3,6 +3,8 @@ import { OrderResponseResult, OrderStatus } from "@/types/api/CheckOrderResponse
 import { createKontriOrder } from "./createKontriOrder";
 import { allocateKontriShortages } from "./allocateKontriShortages";
 
+const KONTRI_SUPPLEMENTAL_ARTICLE_ID = 53086;
+
 export type KontriReconciliationDiagnostic = { code: string; detail: string };
 
 export function reconcileKontriShortages(
@@ -72,9 +74,10 @@ export function reconcileKontriShortages(
                 return reject("ARTICLE_QUANTITY_INVALID", `API ID ${article.AltumArticleID}: množství chybí nebo má neplatný typ.`);
             const apiId = Number(article.AltumArticleID);
             const quantity = Number(article.Quantity);
-            if (!requested.has(apiId)) return reject("UNEXPECTED_API_ID", `Kontri vrátilo API ID ${apiId}, které není v uloženém požadavku.`);
             if (!Number.isFinite(quantity) || quantity < 0)
                 return reject("ARTICLE_QUANTITY_INVALID", `API ID ${apiId}: množství musí být konečné nezáporné číslo.`);
+            if (!requested.has(apiId) && apiId === KONTRI_SUPPLEMENTAL_ARTICLE_ID) continue;
+            if (!requested.has(apiId)) return reject("UNEXPECTED_API_ID", `Kontri vrátilo API ID ${apiId}, které není v uloženém požadavku.`);
             accepted.set(apiId, (accepted.get(apiId) ?? 0) + quantity);
         }
         const shortages = [...requested].map(([AltumArticleID, quantity]) => ({

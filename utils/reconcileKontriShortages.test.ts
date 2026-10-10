@@ -18,6 +18,63 @@ function group() {
 const response = { Code: 200, Status: "Nowe", AltumOrderID: 123, Message: "", Articles: { Article: [{ AltumArticleID: 900, Quantity: 5 }] } };
 
 describe("reconcileKontriShortages", () => {
+    it.each([5, 1])("ignores supplemental article 53086 while reconciling %s accepted product units", (quantity) => {
+        const result = reconcileKontriShortages(group(), "stable", {
+            ...response,
+            Articles: {
+                Article: [
+                    { AltumArticleID: 900, Quantity: quantity },
+                    { AltumArticleID: 53086, Quantity: 1 },
+                ],
+            },
+        } as any);
+        expect([...result!.values()]).toEqual(quantity === 5 ? [0, 0] : [1, 3]);
+    });
+    it("still blocks other unexpected IDs alongside supplemental article 53086", () => {
+        const reasons: { code: string; detail: string }[] = [];
+        expect(
+            reconcileKontriShortages(
+                group(),
+                "stable",
+                {
+                    ...response,
+                    Articles: {
+                        Article: [
+                            { AltumArticleID: 900, Quantity: 5 },
+                            { AltumArticleID: 53086, Quantity: 1 },
+                            { AltumArticleID: 999, Quantity: 1 },
+                        ],
+                    },
+                } as any,
+                (diagnostic) => reasons.push(diagnostic),
+            ),
+        ).toBeNull();
+        expect(reasons[0]).toMatchObject({ code: "UNEXPECTED_API_ID" });
+        expect(reasons[0].detail).toContain("999");
+    });
+    it("does not ignore article 53086 when explicitly requested", () => {
+        const saved = group().map((product) => ({ ...product, kontriApiId: "53086" }));
+        const { products: internal, ...payload } = createKontriOrder(saved, "stable");
+        saved[0].kontriRequestJson = JSON.stringify(payload);
+        const result = reconcileKontriShortages(saved, "stable", {
+            ...response,
+            Articles: { Article: [{ AltumArticleID: 53086, Quantity: 1 }] },
+        } as any);
+        expect([...result!.values()]).toEqual([1, 3]);
+    });
+    it("rejects malformed supplemental article quantities", () => {
+        expect(
+            reconcileKontriShortages(group(), "stable", {
+                ...response,
+                Articles: {
+                    Article: [
+                        { AltumArticleID: 900, Quantity: 5 },
+                        { AltumArticleID: 53086, Quantity: -1 },
+                    ],
+                },
+            } as any),
+        ).toBeNull();
+    });
     it("validates membership in the saved request order rather than a newly sorted order", () => {
         const reversed = [...products].reverse();
         const { products: internal, ...payload } = createKontriOrder(reversed, "stable");

@@ -137,7 +137,11 @@ For code `200` and status `Nowe`, `Articles.Article` quantities are summed by AP
 with the complete immutable request snapshot. Missing requested IDs in an explicit article list
 count as shortages; shared deficits use the same older-order priority allocation. Successful
 reconciliation stores the shortages (including zero) and clears the unknown flag without POST.
-Missing/malformed articles, incomplete or changed snapshots, extra IDs, excessive quantities,
+Supplemental article API ID `53086`, observed by the operator in every Kontri order (suspected
+shipping/service charge, not independently confirmed), is excluded from shortage comparison only
+when absent from the saved request. Its quantity must still be valid. If explicitly requested,
+it is reconciled normally. This exception does not modify the outbound request or stored snapshot.
+Missing/malformed articles, incomplete or changed snapshots, other extra IDs, excessive quantities,
 and contradictions with known shortages leave quantities unknown. Aggregated and later statuses
 are excluded from quantity calculation; historical groups without a snapshot require manual review.
 Reconciliation follows the saved document-ID order, not a newly sorted group. Snapshot item values
