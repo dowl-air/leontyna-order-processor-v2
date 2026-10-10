@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://schemas.xmlsoap.org/wsdl/" xmlns:tns="urn:transport-test"
+    xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/" xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+    targetNamespace="urn:transport-test">
+    <types>
+        <xsd:schema targetNamespace="urn:transport-test" elementFormDefault="qualified">
+            <xsd:element name="CheckStatus">
+                <xsd:complexType>
+                    <xsd:sequence />
+                </xsd:complexType>
+            </xsd:element>
+            <xsd:element name="CheckStatusResponse">
+                <xsd:complexType>
+                    <xsd:sequence>
+                        <xsd:element name="Code" type="xsd:int" />
+                    </xsd:sequence>
+                </xsd:complexType>
+            </xsd:element>
+        </xsd:schema>
+    </types>
+    <message name="CheckStatusInput">
+        <part name="parameters" element="tns:CheckStatus" />
+    </message>
+    <message name="CheckStatusOutput">
+        <part name="parameters" element="tns:CheckStatusResponse" />
+    </message>
+    <portType name="TransportPort">
+        <operation name="CheckStatus">
+            <input message="tns:CheckStatusInput" />
+            <output message="tns:CheckStatusOutput" />
+        </operation>
+    </portType>
+    <binding name="TransportBinding" type="tns:TransportPort">
+        <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http" />
+        <operation name="CheckStatus">
+            <soap:operation soapAction="urn:transport-test/CheckStatus" />
+            <input>
+                <soap:body use="literal" />
+            </input>
+            <output>
+                <soap:body use="literal" />
+            </output>
+        </operation>
+    </binding>
+    <service name="TransportService">
+        <port name="TransportPort" binding="tns:TransportBinding">
+            <soap:address location="__ENDPOINT__" />
+        </port>
+    </service>
+</definitions>

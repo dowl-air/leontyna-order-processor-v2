@@ -18,8 +18,7 @@
         "nodemailer": "^6.9.15",
         "react": "^18",
         "react-dom": "^18",
-        "request": "^2.88.2",
-        "soap": "^1.0.3",
+        "soap": "^1.13.3",
         "uuid": "^10.0.0"
     },
     "devDependencies": {
@@ -27,12 +26,13 @@
         "@types/nodemailer": "^6.4.16",
         "@types/react": "^18",
         "@types/react-dom": "^18",
-        "@types/soap": "^0.21.0",
+        "@types/react-test-renderer": "^18.3.1",
         "@types/uuid": "^10.0.0",
         "daisyui": "^4.10.2",
         "eslint": "^8",
         "eslint-config-next": "14.2.2",
         "postcss": "^8",
+        "react-test-renderer": "^18.2.0",
         "tailwindcss": "^3.4.1",
         "typescript": "^5",
         "vitest": "^3.2.7"

@@ -81,7 +81,11 @@ describe("sendOrders with persisted mapping", () => {
         });
         expect((await run()).status).toBe("success");
         expect(mocks.send).not.toHaveBeenCalled();
-        expect(mocks.mail).not.toHaveBeenCalled();
+        if (quantity === 5) expect(mocks.mail).not.toHaveBeenCalled();
+        else
+            expect(mocks.mail).toHaveBeenCalledWith(
+                expect.objectContaining({ subject: "[Kontri objednávky] Nedostatky", text: expect.stringContaining("Celkem chybí: 4 ks") }),
+            );
         expect(mocks.update).toHaveBeenCalledWith(
             expect.objectContaining({ fID: "older" }),
             expect.objectContaining({ shortage: quantity === 5 ? 0 : 1, kontriReconciliationRequired: false }),
@@ -136,6 +140,57 @@ describe("sendOrders with persisted mapping", () => {
         expect(mocks.send.mock.calls[0][0].OrderedItems[0].AltumArticleId).toBe(900);
         expect(mocks.update).toHaveBeenCalledWith(products[0], expect.objectContaining({ AltumOrderID: "123", RefNumber: "stable", shortage: 1 }));
         expect(mocks.update).toHaveBeenCalledWith(products[1], expect.objectContaining({ shortage: 3 }));
+        expect(mocks.mail).toHaveBeenCalledOnce();
+        expect(mocks.mail).toHaveBeenCalledWith(
+            expect.objectContaining({
+                subject: "[Kontri objednávky] Nedostatky",
+                text: expect.stringContaining("first | AK-5-100 | API 900 | chybí 1 ks"),
+            }),
+        );
+    });
+    it("retains confirmation and reports a failed shortage email without retry", async () => {
+        mocks.mail.mockRejectedValue(new Error("SMTP failure"));
+        const result = await run();
+        expect(result.status).toBe("info");
+        expect(result.message).toContain("E-mailové upozornění se nepodařilo odeslat");
+        expect(mocks.send).toHaveBeenCalledOnce();
+        expect(mocks.persist).toHaveBeenCalledOnce();
+        expect(mocks.mail).toHaveBeenCalledOnce();
+    });
+    it("does not notify shortages when reconciliation persistence makes no writes", async () => {
+        mocks.pending.mockResolvedValue([{ RefNumber: "stable", products: quantityGroup() }]);
+        mocks.newOrder.mockResolvedValue(null);
+        mocks.persist.mockResolvedValue(false);
+        mocks.check.mockResolvedValue({
+            Code: 200,
+            Status: "Nowe",
+            AltumOrderID: 123,
+            Articles: { Article: [{ AltumArticleID: 900, Quantity: 1 }] },
+        });
+        await run();
+        expect(mocks.mail).not.toHaveBeenCalled();
+    });
+    it("does not send a shortage email for a confirmed empty shortage list", async () => {
+        mocks.send.mockResolvedValue({ Code: 100, AltumOrderID: "123", Shortages: { Shortages: [] } });
+        expect((await run()).status).toBe("success");
+        expect(mocks.mail).not.toHaveBeenCalled();
+    });
+    it("reports failed reconciliation email while retaining saved shortages", async () => {
+        mocks.pending.mockResolvedValue([{ RefNumber: "stable", products: quantityGroup() }]);
+        mocks.newOrder.mockResolvedValue(null);
+        mocks.check.mockResolvedValue({
+            Code: 200,
+            Status: "Nowe",
+            AltumOrderID: 123,
+            Articles: { Article: [{ AltumArticleID: 900, Quantity: 1 }] },
+        });
+        mocks.mail.mockResolvedValue(undefined);
+        const result = await run();
+        expect(result.status).toBe("info");
+        expect(result.message).toContain("E-mailové upozornění se nepodařilo odeslat");
+        expect(mocks.persist).toHaveBeenCalledOnce();
+        expect(mocks.send).not.toHaveBeenCalled();
+        expect(mocks.mail).toHaveBeenCalledOnce();
     });
     it.each([0, 10])("does not claim success or replace the snapshot for response %s", async (Code) => {
         mocks.send.mockResolvedValue({ Code });
@@ -169,7 +224,8 @@ describe("sendOrders with persisted mapping", () => {
         expect(mocks.retry).toHaveBeenCalledWith(products, "stable");
         expect(mocks.send).toHaveBeenCalledOnce();
         expect(mocks.send.mock.calls[0][0].RefNumber).toBe("stable");
-        expect(mocks.mail).not.toHaveBeenCalled();
+        expect(mocks.mail).toHaveBeenCalledOnce();
+        expect(mocks.mail).toHaveBeenCalledWith(expect.objectContaining({ subject: "[Kontri objednávky] Nedostatky" }));
     });
     it("retries after a thrown lookup and stops without replacing a conflicting reference", async () => {
         mocks.pending.mockResolvedValue([{ RefNumber: "stable", products }]);

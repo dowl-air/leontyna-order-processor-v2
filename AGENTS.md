@@ -45,7 +45,7 @@ The application reads these environment variables: `FIREBASE_API_KEY`, `SHOPTET_
 ## Testing and Safety
 
 - The Kontri cache uses `KONTRI_FEED_LOGIN` and `KONTRI_FEED_PASSWORD`, `fast-xml-parser`, versioned JSON chunks in `kontriMappings`, and a transactional pointer in `kontriMappingState/current`. See README for permissions and index configuration. The full Firestore SDK is also used for atomic order preparation and result persistence; ordinary product operations still use Lite.
-- The manual Kontri feed button only updates the mapping cache. Order submission resolves IDs from the active cache and stores an immutable API ID/quantity/reference snapshot before POST. No daily cache schedule is enabled. Do not submit live orders or write production data merely to validate code.
+- The manual Kontri feed button only updates the mapping cache. The same update runs at 05:55 Europe/Prague through `app/api/cron/kontri-feed/route.ts`, with Vercel UTC candidates `55 3,4 * * *` and a local-time gate. Require the existing CRON_SECRET Bearer check before the gate. The feed cron must not import Shoptet or submit orders. The minute gate has no durable daily checkpoint or duplicate-delivery guarantee. Order submission resolves IDs from the active cache and stores an immutable API ID/quantity/reference snapshot before POST. Do not submit live orders or write production data merely to validate code.
 - Reject variant-count drops greater than 25% before storage and inside the publication transaction; exactly 25% and the first import are allowed. Notify by email with both counts. Keep rejected publication distinct from unchanged content in UI results.
 - The mapping preview remains read-only and diagnostic: submission uses the same resolver separately, never a client preview result. Resolve old API and new catalog IDs with EAN verification; conflicts and ambiguity must block matches. A match is not proof of retry safety or order eligibility.
 - Prepare at most 450 products atomically, checking their current fields and unclaimed/new status. Preserve original codes and document IDs. Requests use `kontriApiId` and `kontriOrderedAmount`; no code fallback is permitted. Persist results with `persistKontriProducts`, verifying the reference and confirmed order identity.
@@ -56,12 +56,16 @@ The application reads these environment variables: `FIREBASE_API_KEY`, `SHOPTET_
 
 - Add or update focused regression coverage for behavior changes. Use Vitest for the mapping parser, update workflow, server action, and mocked Firestore storage.
 - Before finishing, run `npm run lint` and `./node_modules/.bin/tsc --noEmit`; run `npm run build` when a production-build check is relevant and its environment prerequisites are available.
-- Do not treat lint as warning-free: the current lint run reports a missing `shopOrders` dependency in a `ProductsTable` effect.
+- Order-table pagination runs from the observer with the current cursor, an in-flight guard, and refresh-generation validation. Do not reintroduce an effect that loads again whenever rows are appended. Test interactions with the React 18.2 test renderer in `components/ProductsTable.test.tsx`; lint should remain warning-free.
 - Never log or document credentials. SMTP verification failures use a generic log without credentials or raw exceptions. Kontri feed failures send safe notifications through the existing mailer; notification failures must not hide the original operation result.
 - Do not edit `.next/` build output or `node_modules/`. Treat `next-env.d.ts` as Next.js-managed output.
 - Do not invent environment requirements, API semantics, database rules, or deployment details absent from source/configuration. Investigate their owner or mark them unknown.
 
 ## Agent Behavior
+
+- Shoptet import uses native fetch and Readable.fromWeb with explicit input-stream error handling; do not restore the deprecated request package. SOAP 1.13.3 uses bundled types and requires Node >=20.19.0. Test URL parsing, WSDL, and Basic Auth locally with `utils/soapTransport.test.ts`, never against live Kontri.
+
+- After successful persistence of nonzero shortages, notify the existing mail recipient from both submission and quantity reconciliation. Include reference/order ID and affected product quantities; do not include raw payloads. Zero shortages and reconciliation with no writes must not notify. SMTP failure preserves confirmation and returns a delivery warning; delivery has no retry queue or exactly-once guarantee.
 
 - Reconciliation may ignore supplemental API article `53086` only when absent from the saved request; still validate its quantity. The operator reports it in every Kontri order, but its shipping/service meaning is not independently confirmed. Explicitly requested `53086` must be reconciled normally; all other unexpected IDs remain blocked. Do not change payloads or snapshots for this exception.
 

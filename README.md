@@ -23,6 +23,37 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/basic-features/font-optimization) to automatically optimize and load Inter, a custom Google Font.
 
+## Server Transports
+
+Shoptet CSV imports use native `fetch` (`cache: no-store`) and a Node stream passed to the
+existing CSV parser. HTTP failures, missing bodies, and interrupted streams return an import
+error. Row filters and the existing individual-write failure behavior remain unchanged.
+The legacy `request` dependency is removed. Kontri SOAP uses `soap` 1.13.3 with its bundled
+TypeScript definitions and WHATWG URL parsing; the obsolete `@types/soap` stub is removed.
+SOAP requires Node.js 20.19.0 or newer (including the configured Vercel Node.js 24).
+The Docker Node.js 20 image must therefore resolve to at least 20.19.0.
+
+No deprecation-warning suppression is configured. Regression tests reject calls to `url.parse`
+and exercise WSDL loading, Basic Auth, and a SOAP response against a loopback-only fixture.
+They never call the live Kontri service or write production orders:
+
+```sh
+npm test -- actions/feedsDownload.test.ts utils/soapTransport.test.ts
+```
+
+## Order Table Pagination
+
+The order table loads older rows when its last row enters the viewport. Only one pagination
+request runs at a time; the next request uses the current last row's date. An empty response
+stops pagination until the table is refreshed. Refresh discards pending results from the previous
+list. Failed page loads show an error and allow another intersection to retry.
+
+Interaction regression tests use the React 18.2 test renderer with mocked data access and observer:
+
+```sh
+npm test -- components/ProductsTable.test.tsx
+```
+
 ## Kontri Mapping Cache
 
 Set `KONTRI_FEED_LOGIN` and `KONTRI_FEED_PASSWORD` in the server environment, locally and on Vercel.
@@ -60,8 +91,8 @@ Notifications contain a safe description, operation phase, and UTC timestamp, ne
 raw exceptions, or XML contents. If email delivery fails, the UI reports that failure alongside
 the original result. Successful updates without cleanup errors do not send email.
 
-This button does not import Shoptet orders or submit orders. No daily schedule is added yet,
-and mapped order submission is described below. Keep automatic ordering paused until a controlled
+This button does not import Shoptet orders or submit orders. The same cache update also runs
+daily at 05:55 Europe/Prague as described below. Keep automatic ordering paused until a controlled
 Kontri trial is verified. Failed cache updates preserve the active version.
 
 Run focused tests with:
@@ -126,6 +157,15 @@ giving older orders priority for available stock; ties use document IDs. Unknown
 shortage entries, or impossible shortage quantities prevent confirmation writes and trigger email.
 An explicit empty shortage list confirms zero; missing/null details leave quantities uncertain.
 
+After confirmed nonzero shortages are saved, submission and automatic reconciliation send one
+plain-text notification per processed reference to the existing `SITE_MAIL_RECIEVER`. The subject
+is `[Kontri objednávky] Nedostatky`; the message includes the reference, Kontri order ID, total
+missing units, and each affected Shoptet order/product code, API ID, quantity, and available name.
+Zero shortages and reconciliation results with no writes do not send this notification.
+SMTP failure returns `info` with a delivery warning without undoing confirmation or resending the
+order. Delivery is best-effort: there is no email retry queue or historical shortage backfill,
+and concurrent successful processing is not guaranteed to produce exactly one notification.
+
 On a timeout, uncertain response, or failed confirmation write, the reference and snapshot remain
 stored. Subsequent runs query Kontri by the same reference, including historical pending products.
 If lookup fails or does not return code `200`, they **retry the stored request with the same
@@ -177,7 +217,7 @@ Do not clear references automatically: an old or queued request may already exis
 The full Firestore SDK is used for preparation and result transactions; product imports and
 ordinary reads/status updates still use Lite. Security Rules must allow transaction reads and
 updates of all involved product documents. Error notifications use the existing SMTP configuration;
-mail failure does not hide the operation result. No cron schedule or external endpoint is changed.
+mail failure does not hide the operation result. The order-processing cron schedule is unchanged.
 
 Run focused submission tests with:
 
@@ -186,6 +226,29 @@ npm test -- utils/createKontriOrder.test.ts utils/allocateKontriShortages.test.t
 ```
 
 ## Cron and Status Checks
+
+### Daily Kontri Mapping Update
+
+`GET /api/cron/kontri-feed` updates only the Kontri mapping cache through `downloadKontriFeed`.
+It requires the same configured `CRON_SECRET` and Bearer header as the order cron. It does not
+import Shoptet feeds or submit orders. Existing Kontri feed credentials, validation, transactional
+publication, cleanup, and failure emails apply unchanged.
+
+Vercel cron expressions use UTC. The schedule `55 3,4 * * *` invokes the route at both 03:55
+and 04:55 UTC; the route executes only during 05:55 in `Europe/Prague`, choosing the correct
+candidate automatically in summer and winter. The other invocation returns `skipped` (HTTP 200).
+This is a local-minute gate, not a durable once-per-day checkpoint: late invocations outside that
+minute are skipped and duplicate invocations are not deduplicated. Runtime limits and actual
+scheduler delivery remain deployment constraints. Returned feed errors produce HTTP 500;
+`success` and nonfatal `info` return HTTP 200 with the feed result under `results.kontriFeed`.
+
+Test with mocks, never by calling the authorized live cache endpoint:
+
+```sh
+npm test -- app/api/cron/kontri-feed/route.test.ts actions/downloadKontriFeed.test.ts
+```
+
+### Order Processing
 
 `vercel.json` schedules `GET /api/cron` every ten minutes. A configured `CRON_SECRET` and
 matching `Authorization: Bearer <CRON_SECRET>` header are required; otherwise the endpoint

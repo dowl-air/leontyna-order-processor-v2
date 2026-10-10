@@ -1,5 +1,6 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { act, create, ReactTestRenderer } from "react-test-renderer";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import ShopOrder from "@/types/ShopOrder";
 
@@ -12,6 +13,7 @@ vi.mock("@/db/getProducts", () => ({ getProducts: vi.fn() }));
 vi.mock("./OrderInfoModal", () => ({ OrderInfoModal: () => null }));
 vi.mock("@/actions/checkOrderRefNumber", () => ({ checkOrderByRefNumber: vi.fn() }));
 import ProductsTable from "./ProductsTable";
+import { getProducts } from "@/db/getProducts";
 
 const product = {
     code: "order",
@@ -47,5 +49,109 @@ describe("ProductsTable shortage certainty", () => {
         const html = renderToStaticMarkup(<ProductsTable initialShopOrders={[{ ...product, kontriApiId: "900" }]} />);
         expect(html).toContain("API ID: 900");
         expect(html).toContain("AK-5-100");
+    });
+});
+
+describe("ProductsTable pagination", () => {
+    let renderer: ReactTestRenderer;
+    let intersect: () => void;
+    afterEach(() => {
+        if (renderer) act(() => renderer.unmount());
+        vi.unstubAllGlobals();
+        vi.clearAllMocks();
+    });
+    function mount() {
+        vi.stubGlobal("React", React);
+        vi.stubGlobal(
+            "IntersectionObserver",
+            class {
+                constructor(callback: (entries: { isIntersecting: boolean }[]) => void) {
+                    intersect = () => callback([{ isIntersecting: true }]);
+                }
+                observe() {}
+                disconnect() {}
+            },
+        );
+        act(() => {
+            renderer = create(<ProductsTable initialShopOrders={[product]} />, { createNodeMock: () => ({}) });
+        });
+    }
+    it("loads once while pending and uses the newest cursor only after another intersection", async () => {
+        let resolvePage!: (products: ShopOrder[]) => void;
+        vi.mocked(getProducts).mockImplementationOnce(
+            () =>
+                new Promise((resolve) => {
+                    resolvePage = resolve;
+                }),
+        );
+        mount();
+        await act(async () => {
+            intersect();
+        });
+        await act(async () => {
+            intersect();
+        });
+        expect(getProducts).toHaveBeenCalledTimes(1);
+        const next = { ...product, code: "older-order", date: "2026-10-09" };
+        await act(async () => {
+            resolvePage([next]);
+        });
+        expect(getProducts).toHaveBeenCalledTimes(1);
+        vi.mocked(getProducts).mockResolvedValueOnce([]);
+        await act(async () => {
+            intersect();
+        });
+        expect(getProducts).toHaveBeenLastCalledWith(expect.any(Number), new Date(next.date));
+    });
+    it("does not resume pagination after an empty page", async () => {
+        vi.mocked(getProducts).mockResolvedValue([]);
+        mount();
+        await act(async () => {
+            intersect();
+        });
+        await act(async () => {
+            intersect();
+        });
+        expect(getProducts).toHaveBeenCalledTimes(1);
+    });
+    it("discards a pending page after refresh and resumes from the refreshed cursor", async () => {
+        let resolvePage!: (products: ShopOrder[]) => void;
+        vi.mocked(getProducts).mockImplementationOnce(
+            () =>
+                new Promise((resolve) => {
+                    resolvePage = resolve;
+                }),
+        );
+        mount();
+        await act(async () => {
+            intersect();
+        });
+        const refreshed = { ...product, code: "refreshed", date: "2026-10-11" };
+        vi.mocked(getProducts).mockResolvedValueOnce([refreshed]);
+        await act(async () => {
+            await renderer.root.findAllByType("button")[0].props.onClick();
+        });
+        await act(async () => {
+            resolvePage([{ ...product, code: "stale-page" }]);
+        });
+        expect(JSON.stringify(renderer.toJSON())).not.toContain("stale-page");
+        vi.mocked(getProducts).mockResolvedValueOnce([]);
+        await act(async () => {
+            intersect();
+        });
+        expect(getProducts).toHaveBeenLastCalledWith(expect.any(Number), new Date(refreshed.date));
+    });
+    it("reports a failed page without an unhandled rejection and permits retry", async () => {
+        vi.mocked(getProducts).mockRejectedValueOnce(new Error("failed"));
+        mount();
+        await act(async () => {
+            intersect();
+        });
+        expect(JSON.stringify(renderer.toJSON())).toContain("Načtení dalších objednávek selhalo.");
+        vi.mocked(getProducts).mockResolvedValueOnce([]);
+        await act(async () => {
+            intersect();
+        });
+        expect(getProducts).toHaveBeenCalledTimes(2);
     });
 });

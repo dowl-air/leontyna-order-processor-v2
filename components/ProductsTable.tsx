@@ -24,35 +24,50 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
     const [shopOrders, setShopOrders] = useState(initialShopOrders);
     const [loading, setLoading] = useState(false);
     const [kontriFeedLoading, setKontriFeedLoading] = useState(false);
-    const [page, setPage] = useState(1);
     const [messages, setMessages] = useState<Message[]>([]);
     const [modalOrder, setModalOrder] = useState<OrderResponseResult | null>(null);
     const observer = useRef<IntersectionObserver | null>(null);
+    const pagination = useRef({ pending: false, hasMore: initialShopOrders.length > 0, generation: 0 });
 
     useEffect(() => {
-        const loadMore = async () => {
-            const newOrders = await getProducts(TABLE_ITEMS_FETCH_COUNT, new Date(shopOrders[shopOrders.length - 1].date));
-            setShopOrders((s) => [...s, ...newOrders]);
+        const paginationState = pagination.current;
+        return () => {
+            observer.current?.disconnect();
+            paginationState.generation += 1;
         };
-
-        if (page === 1) return;
-        loadMore();
-    }, [page]);
+    }, []);
 
     const lastPostElementRef = useCallback(
         (node: HTMLElement | null) => {
-            if (loading) return;
             if (observer.current) observer.current.disconnect();
+            if (loading || !node || !pagination.current.hasMore) return;
 
-            observer.current = new IntersectionObserver((entries) => {
-                if (entries[0].isIntersecting) {
-                    setPage((prev) => prev + 1);
+            observer.current = new IntersectionObserver(async (entries) => {
+                if (!entries[0]?.isIntersecting || pagination.current.pending || !pagination.current.hasMore || loading) return;
+                const lastOrder = shopOrders[shopOrders.length - 1];
+                if (!lastOrder) return;
+                const generation = pagination.current.generation;
+                pagination.current.pending = true;
+                try {
+                    const newOrders = await getProducts(TABLE_ITEMS_FETCH_COUNT, new Date(lastOrder.date));
+                    if (generation !== pagination.current.generation) return;
+                    if (!newOrders.length) {
+                        pagination.current.hasMore = false;
+                        observer.current?.disconnect();
+                        return;
+                    }
+                    setShopOrders((previous) => [...previous, ...newOrders]);
+                } catch {
+                    if (generation === pagination.current.generation)
+                        setMessages((previous) => [...previous, { type: "error", message: "Načtení dalších objednávek selhalo." }]);
+                } finally {
+                    pagination.current.pending = false;
                 }
             });
 
-            if (node) observer.current.observe(node);
+            observer.current.observe(node);
         },
-        [loading],
+        [loading, shopOrders],
     );
 
     const openModal = () => {
@@ -65,10 +80,11 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
     };
 
     const refreshShopOrders = async () => {
+        pagination.current.generation += 1;
         setLoading(true);
         const shopOrdersAPI = await getProducts(TABLE_ITEMS_FETCH_COUNT, null);
+        pagination.current.hasMore = shopOrdersAPI.length > 0;
         setShopOrders(shopOrdersAPI);
-        setPage(1);
         setLoading(false);
     };
 

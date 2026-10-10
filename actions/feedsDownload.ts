@@ -3,9 +3,8 @@
 import { addProduct } from "@/db/addProduct";
 import { getLatestDate } from "@/db/getLatestDate";
 import { formatDateShoptet } from "@/utils/formatDate";
-
-let csv = require("csvtojson");
-let request = require("request");
+import csv from "csvtojson";
+import { Readable } from "node:stream";
 
 const SHOPTET_URL = process.env.SHOPTET_URL!;
 const SHOPTET_URL_SK = process.env.SHOPTET_URL_SK!;
@@ -17,24 +16,28 @@ export const feedsDownload = async () => {
     console.log("Latest date in the database: ", date.toLocaleString());
     const dateFormatted = formatDateShoptet(date);
 
-    const fetchAndProcessCSV = (url: string) => {
-        return new Promise((resolve, reject) => {
+    const fetchAndProcessCSV = async (url: string) => {
+        const response = await fetch(`${url}&updateTimeFrom=${dateFormatted}`, { cache: "no-store" });
+        if (!response.ok || !response.body) throw new Error("Shoptet feed download failed.");
+        const stream = Readable.fromWeb(response.body as Parameters<typeof Readable.fromWeb>[0]);
+        return new Promise<void>((resolve, reject) => {
+            stream.once("error", reject);
             csv()
-                .fromStream(request.get(`${url}&updateTimeFrom=${dateFormatted}`))
+                .fromStream(stream)
                 .subscribe(
                     (json: any) => {
-                        return new Promise((resolve, reject) => {
-                            if (!json) return resolve({});
-                            if (json.hasOwnProperty("orderItemType") && json.orderItemType !== "product") return resolve({});
-                            if (json.hasOwnProperty("orderItemCode") && json.orderItemCode.substring(0,2) !== "AK") return resolve({});
-                            if (json.hasOwnProperty("orderItemSupplier") && json.orderItemSupplier !== "Kontri.pl") return resolve({});
+                        return new Promise<void>((resolve) => {
+                            if (!json) return resolve();
+                            if (json.hasOwnProperty("orderItemType") && json.orderItemType !== "product") return resolve();
+                            if (json.hasOwnProperty("orderItemCode") && json.orderItemCode.substring(0, 2) !== "AK") return resolve();
+                            if (json.hasOwnProperty("orderItemSupplier") && json.orderItemSupplier !== "Kontri.pl") return resolve();
                             if (json.hasOwnProperty("field13")) delete json.field13;
 
                             addProduct(json)
-                                .then(() => resolve({}))
+                                .then(() => resolve())
                                 .catch((err: any) => {
                                     console.error(err);
-                                    resolve({});
+                                    resolve();
                                 });
                         });
                     },
@@ -44,8 +47,8 @@ export const feedsDownload = async () => {
                     },
                     () => {
                         console.log(`Data from ${url} fetched successfully.`);
-                        resolve({});
-                    }
+                        resolve();
+                    },
                 );
         });
     };

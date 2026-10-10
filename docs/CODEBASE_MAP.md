@@ -73,6 +73,20 @@ The diagram shows code-level calls and configured integrations. Feed URLs and th
 
 ### Scheduled processing
 
+Shoptet CSV transport uses native `fetch` and a Node stream, not the removed `request` package.
+HTTP/body/stream failures reject the import; existing row filters and individual-write handling
+are unchanged. SOAP 1.13.3 uses WHATWG URL parsing and bundled types (Node >=20.19.0).
+Transport regressions are tested in `actions/feedsDownload.test.ts` and `utils/soapTransport.test.ts`
+using mocked imports and a loopback WSDL/Basic Auth round-trip without production operations.
+
+The separate `GET /api/cron/kontri-feed` endpoint refreshes only the Kontri mapping cache at
+05:55 Europe/Prague using `actions/downloadKontriFeed.ts`. Vercel UTC schedule `55 3,4 * * *`
+provides summer/winter candidates; a local-hour/minute gate skips the other invocation. It uses
+the same CRON_SECRET Bearer check, returns HTTP 500 on feed failures, and includes successful
+or nonfatal results under `results.kontriFeed`. Existing cache safeguards and failure mail apply.
+There is no durable daily checkpoint or scheduler timing guarantee; tests mock the feed action
+in `app/api/cron/kontri-feed/route.test.ts`. It never invokes order import/submission.
+
 `vercel.json` schedules `GET /api/cron` every ten minutes. `app/api/cron/route.ts` compares the request's `Authorization` header with `Bearer ${CRON_SECRET}`. An authorized request sequentially runs:
 
 1. `actions/feedsDownload.ts` finds the latest stored product date, requests both Shoptet CSV feeds with that update time, and skips rows when a present item type is not `product`, a present item code does not start with `AK`, or a present supplier is not `Kontri.pl`; accepted rows are passed to `db/addProduct.ts`.
@@ -160,7 +174,7 @@ Environment variable names above are taken from source; this document intentiona
 
 - Runtime/dependency manager: npm, indicated by `package-lock.json` and npm scripts in `package.json`.
 - Framework/build: Next.js 14; `npm run dev`, `npm run build`, and `npm run start` delegate to Next.js.
-- Lint: `npm run lint` runs `next lint`. The inspected run completed with one warning: `components/ProductsTable.tsx` has a `useEffect` missing the `shopOrders` dependency.
+- Lint: `npm run lint` runs `next lint`. The order-table hook dependency warning was removed by observer-driven pagination, covered by interaction tests in `components/ProductsTable.test.tsx`; the verified lint run has no warnings or errors.
 - Type checking: `tsconfig.json` enables strict mode; there is no package script. `./node_modules/.bin/tsc --noEmit` completed successfully in this environment.
 - Automated tests: `npm test -- <test paths>` runs focused Vitest tests. Cron/status regression coverage is in `app/api/cron/route.test.ts`, `actions/updateOrdersState.test.ts`, and `db/getProducts.test.ts`; mapping, submission, and persistence have additional mocked tests.
 - CI: no checked-in `.github` workflow or other YAML workflow file was found.
@@ -206,4 +220,4 @@ The observations above describe code and configuration, not a proposed redesign.
 - No `.env.example` was available in the worktree (it is currently deleted); environment variable names were enumerated from source only.
 - Firestore rules, indexes, schema validation, deployment project settings, and secrets management are external to this repository.
 - The README is still the default create-next-app guide and does not explain this application's integrations or operational setup.
-- The local lint run has the `ProductsTable` hook dependency warning described above. The production build was not executed; external font availability and complete deployment environment were not validated.
+- Lint was verified without warnings after the order-table pagination fix. Production builds have been run locally; complete deployment environment and external runtime behavior are not independently validated.

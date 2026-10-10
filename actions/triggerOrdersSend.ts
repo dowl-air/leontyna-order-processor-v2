@@ -9,14 +9,32 @@ import { allocateKontriShortages } from "@/utils/allocateKontriShortages";
 import { sendMail } from "./sendMail";
 import { checkOrderByRefNumber } from "./checkOrderRefNumber";
 import { reconcileKontriShortages } from "@/utils/reconcileKontriShortages";
+import ShopOrder from "@/types/ShopOrder";
 
-async function notifyOrderProblem(message: string) {
+async function notifyOrderProblem(message: string, subject = "[Kontri objednávky] Kontrola zpracování") {
     try {
-        if (await sendMail({ subject: "[Kontri objednávky] Kontrola zpracování", text: message })) return "";
+        if (await sendMail({ subject, text: message })) return "";
     } catch {
         console.error("Kontri order notification failed.");
     }
     return " E-mailové upozornění se nepodařilo odeslat.";
+}
+
+async function notifyShortages(products: ShopOrder[], shortages: Map<string, number>, refNumber: string, orderId: string) {
+    const missing = products.flatMap((product) => {
+        const quantity = shortages.get(product.fID ?? `${product.code}_${product.orderItemCode}`) ?? 0;
+        return quantity > 0 ? [{ product, quantity }] : [];
+    });
+    if (!missing.length) return "";
+    const text = [
+        `Kontri objednávka ${refNumber} (Altum ID ${orderId}) má nedostatky.`,
+        `Celkem chybí: ${missing.reduce((sum, item) => sum + item.quantity, 0)} ks`,
+        ...missing.map(
+            ({ product, quantity }) =>
+                `${product.code} | ${product.orderItemCode} | API ${product.kontriApiId} | chybí ${quantity} ks${product.orderItemName ? ` | ${product.orderItemName}` : ""}`,
+        ),
+    ].join("\n");
+    return notifyOrderProblem(text, "[Kontri objednávky] Nedostatky");
 }
 
 async function orderError(message: string) {
@@ -38,7 +56,7 @@ const sendOrderHandler = async (orderObject: KontriOrder) => {
                 if (!validOrderId(orderResp.AltumOrderID)) throw new Error("Missing confirmed Kontri order ID.");
                 const shortageDetails = orderResp.Shortages?.Shortages;
                 const shortages = Array.isArray(shortageDetails) ? allocateKontriShortages(products, shortageDetails) : null;
-                await persistKontriProducts(
+                const updated = await persistKontriProducts(
                     products.map((product) => ({
                         product,
                         fields: {
@@ -57,7 +75,11 @@ const sendOrderHandler = async (orderObject: KontriOrder) => {
                     const message = `Kontri objednávka ${refNumber} byla potvrzena (${orderResp.AltumOrderID}), ale nedostatky jsou zatím neznámé. Další běh je zkusí doplnit z neagregované objednávky.`;
                     return { status: "info", message: message + (await notifyOrderProblem(message)) };
                 }
-                return { status: "success", message: `Kontri objednávka ${refNumber} byla potvrzena (${orderResp.AltumOrderID}).` };
+                const notification = updated ? await notifyShortages(products, shortages, refNumber, String(orderResp.AltumOrderID)) : "";
+                return {
+                    status: notification ? "info" : "success",
+                    message: `Kontri objednávka ${refNumber} byla potvrzena (${orderResp.AltumOrderID}).${notification}`,
+                };
             case 80:
                 await persistKontriProducts(
                     products.map((product) => ({ product, fields: { kontriStatusCode: 80, kontriStatusName: "Nedostupné" } })),
@@ -155,8 +177,10 @@ export const sendOrders = async () => {
                 continue;
             }
             if (shortages) {
+                const notification = await notifyShortages(order.products, shortages, order.RefNumber, String(response!.AltumOrderID));
+                if (notification) requiresReviewOrWaiting = true;
                 messages.push(
-                    `Objednávka ${order.RefNumber} byla dohledána bez znovuodeslání. Nedostatky byly automaticky doplněny (${[...shortages.values()].reduce((sum, quantity) => sum + quantity, 0)} ks).`,
+                    `Objednávka ${order.RefNumber} byla dohledána bez znovuodeslání. Nedostatky byly automaticky doplněny (${[...shortages.values()].reduce((sum, quantity) => sum + quantity, 0)} ks).${notification}`,
                 );
                 retried = true;
             } else {
