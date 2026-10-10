@@ -12,6 +12,15 @@ export const getUnconfirmedOrders = async (): Promise<UnconfirmedKontriOrder[]> 
     const documents = new Map(
         [...uncertain.docs, ...pending.docs.filter((document) => document.data().RefNumber)].map((document) => [document.id, document]),
     );
+    const unknown = await getDocs(query(collection(db, "products"), where("kontriReconciliationRequired", "==", true)));
+    const references = new Set(
+        unknown.docs.filter((document) => document.data().kontriStatusCode === 100).map((document) => document.data().RefNumber),
+    );
+    for (const reference of references) {
+        if (typeof reference !== "string" || !reference) throw new Error("Unknown Kontri quantities have no reference.");
+        const group = await getDocs(query(collection(db, "products"), where("RefNumber", "==", reference)));
+        group.docs.forEach((document) => documents.set(document.id, document));
+    }
     const groups = new Map<string, ShopOrder[]>();
     for (const document of documents.values()) {
         const data = document.data();

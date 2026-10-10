@@ -6,6 +6,7 @@ export async function persistKontriProducts(
     updates: { product: ShopOrder; fields: Partial<ShopOrder> }[],
     refNumber: string,
     reconciliation = false,
+    calculatedShortages = false,
 ) {
     if (!updates.length || updates.length > 450 || !refNumber) throw new Error("Invalid Kontri persistence group.");
     const database = getFirestore(db.app);
@@ -14,11 +15,23 @@ export async function persistKontriProducts(
     const references = ids.map((id) => doc(database, "products", id));
     return runTransaction(database, async (transaction) => {
         const snapshots = await Promise.all(references.map((reference) => transaction.get(reference)));
+        if (calculatedShortages && snapshots.some((snapshot) => snapshot.data()?.kontriStatusCode >= 300)) return false;
         const writable = snapshots.map((snapshot, index) => {
             const current = snapshot.data();
             const fields = updates[index].fields;
             if (!snapshot.exists() || current?.RefNumber !== refNumber || (fields.RefNumber && fields.RefNumber !== refNumber))
                 throw new Error("Kontri product reference changed.");
+            if (calculatedShortages) {
+                const product = updates[index].product;
+                if (
+                    current.kontriApiId !== product.kontriApiId ||
+                    current.kontriOrderedAmount !== product.kontriOrderedAmount ||
+                    current.kontriRequestJson !== product.kontriRequestJson ||
+                    current.kontriRequestLeaderId !== product.kontriRequestLeaderId ||
+                    JSON.stringify(current.kontriRequestProductIds) !== JSON.stringify(product.kontriRequestProductIds)
+                )
+                    throw new Error("Kontri quantity snapshot changed.");
+            }
             if (
                 fields.AltumOrderID &&
                 current.AltumOrderID &&

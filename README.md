@@ -130,9 +130,18 @@ On a timeout, uncertain response, or failed confirmation write, the reference an
 stored. Subsequent runs query Kontri by the same reference, including historical pending products.
 If lookup fails or does not return code `200`, they **retry the stored request with the same
 reference**, once per group in that run. No new reference is generated after a timeout.
-A successful status
-response with a real Kontri ID links the products to that order and marks quantities for manual
-verification. The UI shows **Ověřit** instead of a shortage number, and email explains the issue.
+A successful status response with a real Kontri ID links the products without resending them.
+The UI shows **Neznámé** until shortages are confirmed. Subsequent submission/cron runs also
+select confirmed status `100` products with unknown quantities and load their whole reference group.
+For code `200` and status `Nowe`, `Articles.Article` quantities are summed by API ID and compared
+with the complete immutable request snapshot. Missing requested IDs in an explicit article list
+count as shortages; shared deficits use the same older-order priority allocation. Successful
+reconciliation stores the shortages (including zero) and clears the unknown flag without POST.
+Missing/malformed articles, incomplete or changed snapshots, extra IDs, excessive quantities,
+and contradictions with known shortages leave quantities unknown. Aggregated and later statuses
+are excluded from quantity calculation; historical groups without a snapshot require manual review.
+Failed lookups for already confirmed orders never trigger retry. The publication transaction checks
+the snapshot again and rejects quantity calculation if the group advanced to aggregation meanwhile.
 The persisted API ID is shown below the original product code. Late reconciliation cannot replace
 known shortages, and a late original response cannot regress an advanced order status.
 
@@ -160,7 +169,7 @@ mail failure does not hide the operation result. No cron schedule or external en
 Run focused submission tests with:
 
 ```sh
-npm test -- utils/createKontriOrder.test.ts utils/allocateKontriShortages.test.ts db/getNewOrder.test.ts db/getUnconfirmedOrders.test.ts db/persistKontriProducts.test.ts db/updateProduct.test.ts actions/triggerOrdersSend.test.ts components/ProductsTable.test.tsx
+npm test -- utils/createKontriOrder.test.ts utils/allocateKontriShortages.test.ts utils/reconcileKontriShortages.test.ts db/getNewOrder.test.ts db/getUnconfirmedOrders.test.ts db/persistKontriProducts.test.ts db/updateProduct.test.ts actions/triggerOrdersSend.test.ts components/ProductsTable.test.tsx
 ```
 
 ## Cron and Status Checks

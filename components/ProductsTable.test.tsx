@@ -30,16 +30,16 @@ const product = {
 
 describe("ProductsTable shortage certainty", () => {
     afterEach(() => vi.unstubAllGlobals());
-    it("shows manual verification instead of a zero shortage after reconciliation", () => {
+    it("shows unknown instead of a zero shortage before quantity confirmation", () => {
         vi.stubGlobal("React", React);
         const html = renderToStaticMarkup(<ProductsTable initialShopOrders={[{ ...product, kontriReconciliationRequired: true }]} />);
-        expect(html).toContain("Ověřit");
-        expect(html).toContain("Nedostatky nebyly potvrzeny původní odpovědí Kontri");
+        expect(html).toContain("Neznámé");
+        expect(html).toContain("Nedostatky zatím nejsou potvrzené");
     });
     it("shows the known shortage for a normal confirmed response", () => {
         vi.stubGlobal("React", React);
         const html = renderToStaticMarkup(<ProductsTable initialShopOrders={[{ ...product, shortage: 2, kontriReconciliationRequired: false }]} />);
-        expect(html).not.toContain("Ověřit");
+        expect(html).not.toContain("Neznámé");
         expect(html).toMatch(/text-center text-error font-bold[^>]*>2<\/td>/);
     });
     it("displays the persisted API ID alongside the unchanged source code", () => {

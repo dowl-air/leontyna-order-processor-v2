@@ -73,4 +73,47 @@ describe("persistKontriProducts", () => {
         mocks.transaction.mockRejectedValue(new Error("commit failed"));
         await expect(persistKontriProducts(updates, "stable")).rejects.toThrow("commit failed");
     });
+    it("does not calculate quantities after concurrent aggregation", async () => {
+        mocks.get.mockResolvedValue({
+            exists: () => true,
+            data: () => ({ RefNumber: "stable", AltumOrderID: "123", kontriStatusCode: 301, kontriReconciliationRequired: true }),
+        });
+        expect(await persistKontriProducts(updates, "stable", true, true)).toBe(false);
+        expect(mocks.update).not.toHaveBeenCalled();
+    });
+    it("rejects a changed quantity snapshot before calculated shortages are stored", async () => {
+        mocks.get.mockResolvedValue({
+            exists: () => true,
+            data: () => ({
+                RefNumber: "stable",
+                AltumOrderID: "123",
+                kontriStatusCode: 100,
+                kontriReconciliationRequired: true,
+                kontriOrderedAmount: 99,
+            }),
+        });
+        await expect(persistKontriProducts(updates, "stable", true, true)).rejects.toThrow();
+        expect(mocks.update).not.toHaveBeenCalled();
+    });
+    it("clears uncertainty only for unknown products with unchanged snapshots", async () => {
+        mocks.get.mockResolvedValueOnce({
+            exists: () => true,
+            data: () => ({ ...products[0], RefNumber: "stable", AltumOrderID: "123", kontriStatusCode: 100, kontriReconciliationRequired: true }),
+        });
+        mocks.get.mockResolvedValueOnce({
+            exists: () => true,
+            data: () => ({
+                ...products[1],
+                RefNumber: "stable",
+                AltumOrderID: "123",
+                kontriStatusCode: 100,
+                kontriReconciliationRequired: false,
+                shortage: 0,
+            }),
+        });
+        const calculated = updates.map((update) => ({ ...update, fields: { ...update.fields, kontriReconciliationRequired: false } }));
+        expect(await persistKontriProducts(calculated, "stable", true, true)).toBe(true);
+        expect(mocks.update).toHaveBeenCalledOnce();
+        expect(mocks.update).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ shortage: 0, kontriReconciliationRequired: false }));
+    });
 });

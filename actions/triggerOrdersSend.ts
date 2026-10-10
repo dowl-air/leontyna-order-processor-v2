@@ -8,6 +8,7 @@ import { persistKontriProducts } from "@/db/persistKontriProducts";
 import { allocateKontriShortages } from "@/utils/allocateKontriShortages";
 import { sendMail } from "./sendMail";
 import { checkOrderByRefNumber } from "./checkOrderRefNumber";
+import { reconcileKontriShortages } from "@/utils/reconcileKontriShortages";
 
 async function notifyOrderProblem(message: string) {
     try {
@@ -53,7 +54,7 @@ const sendOrderHandler = async (orderObject: KontriOrder) => {
                     refNumber,
                 );
                 if (!shortages) {
-                    const message = `Kontri objednávka ${refNumber} byla potvrzena (${orderResp.AltumOrderID}), ale odpověď neobsahuje potvrzené nedostatky. Množství vyžaduje ruční kontrolu.`;
+                    const message = `Kontri objednávka ${refNumber} byla potvrzena (${orderResp.AltumOrderID}), ale nedostatky jsou zatím neznámé. Další běh je zkusí doplnit z neagregované objednávky.`;
                     return { status: "info", message: message + (await notifyOrderProblem(message)) };
                 }
                 return { status: "success", message: `Kontri objednávka ${refNumber} byla potvrzena (${orderResp.AltumOrderID}).` };
@@ -105,6 +106,11 @@ export const sendOrders = async () => {
             await new Promise((resolve) => setTimeout(resolve, 2100));
             const response = await checkOrderByRefNumber(order.RefNumber).catch(() => null);
             if (Number(response?.Code) !== 200) {
+                if (order.products.some((product) => product.AltumOrderID && product.AltumOrderID !== order.RefNumber)) {
+                    messages.push(`Nedostatky potvrzené objednávky ${order.RefNumber} zatím nelze zjistit. Objednávka nebyla znovu odeslána.`);
+                    requiresReviewOrWaiting = true;
+                    continue;
+                }
                 const retry = await prepareKontriRetry(order.products, order.RefNumber);
                 await new Promise((resolve) => setTimeout(resolve, 2100));
                 const result = await sendOrderHandler(retry);
@@ -119,6 +125,7 @@ export const sendOrders = async () => {
                     `Objednávku ${order.RefNumber} se nepodařilo bezpečně ověřit u Kontri. Žádný nový požadavek nebyl odeslán; je nutná ruční kontrola.`,
                 );
             }
+            const shortages = reconcileKontriShortages(order.products, order.RefNumber, response!);
             const updated = await persistKontriProducts(
                 order.products.map((product) => ({
                     product,
@@ -127,17 +134,27 @@ export const sendOrders = async () => {
                         RefNumber: order.RefNumber,
                         kontriStatusCode: 100,
                         kontriStatusName: "Objednáno",
-                        kontriReconciliationRequired: true,
+                        kontriReconciliationRequired: !shortages,
+                        ...(shortages ? { shortage: shortages.get(product.fID ?? `${product.code}_${product.orderItemCode}`)! } : {}),
                         ...(response!.AltumOrderNumber ? { kontriOrderCode: response!.AltumOrderNumber } : {}),
                     },
                 })),
                 order.RefNumber,
                 true,
+                !!shortages,
             );
             if (!updated) continue;
-            const message = `Objednávka ${order.RefNumber} byla dohledána u Kontri (${response!.AltumOrderID}) bez znovuodeslání. Nedostatky a množství vyžadují ruční kontrolu.`;
-            messages.push(message + (await notifyOrderProblem(message)));
-            requiresReviewOrWaiting = true;
+            if (shortages) {
+                messages.push(
+                    `Objednávka ${order.RefNumber} byla dohledána bez znovuodeslání. Nedostatky byly automaticky doplněny (${[...shortages.values()].reduce((sum, quantity) => sum + quantity, 0)} ks).`,
+                );
+                retried = true;
+            } else {
+                messages.push(
+                    `Objednávka ${order.RefNumber} byla dohledána bez znovuodeslání. Nedostatky zůstávají neznámé: odpověď není ověřitelná neagregovaná objednávka s úplným snapshotem.`,
+                );
+                requiresReviewOrWaiting = true;
+            }
         }
         const order = await getNewOrder();
         if (order) {

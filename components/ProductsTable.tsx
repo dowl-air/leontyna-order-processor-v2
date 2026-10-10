@@ -259,9 +259,9 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
                                     </td>
                                     <td
                                         className={`text-center ${order.kontriReconciliationRequired ? "text-warning font-bold" : order.shortage ? "text-error font-bold" : ""}`}
-                                        title={order.kontriReconciliationRequired ? "Nedostatky nebyly potvrzeny původní odpovědí Kontri" : undefined}
+                                        title={order.kontriReconciliationRequired ? "Nedostatky zatím nejsou potvrzené" : undefined}
                                     >
-                                        {order.kontriReconciliationRequired ? "Ověřit" : order.shortage}
+                                        {order.kontriReconciliationRequired ? "Neznámé" : order.shortage}
                                     </td>
                                     <td className="text-center">
                                         {order.kontriStatusCode !== undefined ? (

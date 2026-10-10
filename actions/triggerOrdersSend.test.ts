@@ -25,6 +25,18 @@ const products = [
     { fID: "newer", code: "second", date: "2026-10-10", orderItemCode: "AK-5-100", kontriApiId: "900", kontriOrderedAmount: 3, RefNumber: "stable" },
 ] as ShopOrder[];
 const order = createKontriOrder(products, "stable");
+function quantityGroup() {
+    const sorted = [...products].sort((first, second) => first.fID!.localeCompare(second.fID!));
+    const { products: internal, ...payload } = createKontriOrder(sorted, "stable");
+    return sorted.map((product, index) => ({
+        ...product,
+        AltumOrderID: "123",
+        kontriStatusCode: 100,
+        kontriReconciliationRequired: true,
+        kontriRequestLeaderId: sorted[0].fID,
+        ...(index === 0 ? { kontriRequestJson: JSON.stringify(payload), kontriRequestProductIds: sorted.map((item) => item.fID!) } : {}),
+    }));
+}
 async function run() {
     const result = sendOrders();
     await vi.runAllTimersAsync();
@@ -52,6 +64,50 @@ describe("sendOrders with persisted mapping", () => {
         });
     });
     afterEach(() => vi.useRealTimers());
+    it.each([5, 1])("automatically reconciles a found Nowe order accepting %s units without POST", async (quantity) => {
+        const group = quantityGroup();
+        mocks.pending.mockResolvedValue([{ RefNumber: "stable", products: group }]);
+        mocks.newOrder.mockResolvedValue(null);
+        mocks.check.mockResolvedValue({
+            Code: 200,
+            Status: "Nowe",
+            AltumOrderID: 123,
+            Articles: { Article: [{ AltumArticleID: 900, Quantity: quantity }] },
+        });
+        expect((await run()).status).toBe("success");
+        expect(mocks.send).not.toHaveBeenCalled();
+        expect(mocks.mail).not.toHaveBeenCalled();
+        expect(mocks.update).toHaveBeenCalledWith(
+            expect.objectContaining({ fID: "older" }),
+            expect.objectContaining({ shortage: quantity === 5 ? 0 : 1, kontriReconciliationRequired: false }),
+        );
+        expect(mocks.update).toHaveBeenCalledWith(
+            expect.objectContaining({ fID: "newer" }),
+            expect.objectContaining({ shortage: quantity === 5 ? 0 : 3, kontriReconciliationRequired: false }),
+        );
+    });
+    it("never retries a confirmed order when its quantity lookup fails", async () => {
+        mocks.pending.mockResolvedValue([{ RefNumber: "stable", products: quantityGroup() }]);
+        mocks.check.mockResolvedValue({ Code: 500 });
+        mocks.newOrder.mockResolvedValue(null);
+        expect((await run()).status).toBe("info");
+        expect(mocks.retry).not.toHaveBeenCalled();
+        expect(mocks.send).not.toHaveBeenCalled();
+        expect(mocks.update).not.toHaveBeenCalled();
+    });
+    it("leaves aggregated quantities unknown even when article quantities match", async () => {
+        mocks.pending.mockResolvedValue([{ RefNumber: "stable", products: quantityGroup() }]);
+        mocks.check.mockResolvedValue({
+            Code: 200,
+            Status: "Kompletowane",
+            AltumOrderID: 123,
+            Articles: { Article: [{ AltumArticleID: 900, Quantity: 5 }] },
+        });
+        mocks.newOrder.mockResolvedValue(null);
+        expect((await run()).status).toBe("info");
+        expect(mocks.update.mock.calls[0][1]).not.toHaveProperty("shortage");
+        expect(mocks.update.mock.calls[0][1].kontriReconciliationRequired).toBe(true);
+    });
     it("sends mapped IDs and distributes shortages once by persisted identity", async () => {
         expect((await run()).status).toBe("success");
         expect(mocks.send).toHaveBeenCalledOnce();
