@@ -5,15 +5,14 @@ import { checkOrderByRefNumber } from "./checkOrderRefNumber";
 import { OrderStatus } from "@/types/api/CheckOrderResponse";
 import { updateProduct } from "@/db/updateProduct";
 
-const PAST_DAYS = 3;
-
 const updateProductGroupState = async (refNumber: string, products: ShopOrder[], baseStatus: OrderStatus) => {
     console.log("Checking product group state for refNumber:", refNumber, products.length);
     const status = await checkOrderByRefNumber(refNumber);
-    if (!status) return true;
-    if (status.Status === baseStatus) return false;
+    if (Number(status?.Code) !== 200 || !status.Status || !Object.values(OrderStatus).includes(status.Status))
+        throw new Error("Invalid Kontri status response.");
+    if (status.Status === baseStatus || status.Status === OrderStatus.NEW) return;
 
-    let newStatusCode = 100;
+    let newStatusCode: number;
 
     switch (status.Status) {
         case OrderStatus.AGGREGATED:
@@ -27,6 +26,9 @@ const updateProductGroupState = async (refNumber: string, products: ShopOrder[],
         case OrderStatus.SENT:
         case OrderStatus.READY_TO_SEND:
             newStatusCode = 400;
+            break;
+        default:
+            throw new Error("Unsupported Kontri order status.");
     }
 
     console.log("Updating product group state for refNumber:", refNumber, "to", newStatusCode, "products:", products.length);
@@ -35,18 +37,26 @@ const updateProductGroupState = async (refNumber: string, products: ShopOrder[],
         await updateProduct(product, { kontriStatusCode: newStatusCode });
     });
     await Promise.all(promises);
-    return true;
 };
 
 const updateOrdersState = async (getProducts: () => Promise<ShopOrder[]>, status: OrderStatus) => {
     console.log("Updating orders state that have: ", status);
-    const products = await getProducts();
-    if (products.length === 0) return;
+    let checkedCount = 0;
+    let failedCount = 0;
+    let products: ShopOrder[];
+    try {
+        products = await getProducts();
+    } catch {
+        return { status: "error", message: "Kontri status products could not be read.", checkedCount, failedCount: 1 };
+    }
 
     const refMap = new Map<string, ShopOrder[]>();
     products.forEach((product) => {
         const refNumber = product.RefNumber;
-        if (!refNumber) return;
+        if (!refNumber) {
+            failedCount++;
+            return;
+        }
         if (!refMap.has(refNumber)) refMap.set(refNumber, []);
         refMap.get(refNumber)!.push(product);
     });
@@ -56,20 +66,28 @@ const updateOrdersState = async (getProducts: () => Promise<ShopOrder[]>, status
     const delay = (ms: number) => new Promise((res) => setTimeout(res, ms));
     let index = 0;
     for (const [refNumber, products] of refMap.entries()) {
-        await delay(index * 2500);
-        const shouldContinue = await updateProductGroupState(refNumber, products, status);
-        if (!shouldContinue) {
-            console.log(`Stopping at refNumber ${refNumber}`);
-            break;
+        if (index > 0) await delay(2500);
+        checkedCount++;
+        try {
+            await updateProductGroupState(refNumber, products, status);
+        } catch {
+            failedCount++;
+            console.error("Kontri order status group check failed.");
         }
         index++;
     }
+    return {
+        status: failedCount ? "error" : "success",
+        message: `Kontri status checks: ${checkedCount} groups checked, ${failedCount} failures.`,
+        checkedCount,
+        failedCount,
+    };
 };
 
 export const updateNewOrdersState = async () => {
-    await updateOrdersState(getOrderedProducts.bind(null, PAST_DAYS), OrderStatus.NEW);
+    return updateOrdersState(getOrderedProducts, OrderStatus.NEW);
 };
 
 export const updateAggregatedOrdersState = async () => {
-    await updateOrdersState(getNotSentProducts, OrderStatus.AGGREGATED);
+    return updateOrdersState(getNotSentProducts, OrderStatus.AGGREGATED);
 };

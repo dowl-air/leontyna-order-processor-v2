@@ -76,24 +76,37 @@ The diagram shows code-level calls and configured integrations. Feed URLs and th
 `vercel.json` schedules `GET /api/cron` every ten minutes. `app/api/cron/route.ts` compares the request's `Authorization` header with `Bearer ${CRON_SECRET}`. An authorized request sequentially runs:
 
 1. `actions/feedsDownload.ts` finds the latest stored product date, requests both Shoptet CSV feeds with that update time, and skips rows when a present item type is not `product`, a present item code does not start with `AK`, or a present supplier is not `Kontri.pl`; accepted rows are passed to `db/addProduct.ts`.
-2. `actions/triggerOrdersSend.ts` resends products currently marked unconfirmed, then builds and sends at most one new order from products whose `AltumOrderID` is null.
-3. `actions/updateOrdersState.ts` checks recent ordered groups and aggregated groups using `actions/checkOrderRefNumber.ts`, then updates Firestore status fields.
+2. If import returned `success`, `actions/triggerOrdersSend.ts` reconciles unconfirmed and historically referenced products without replaying requests, then prepares and sends at most one new mapped order if reconciliation succeeded. Otherwise this step is marked `skipped`.
+3. `actions/updateOrdersState.ts` checks state `100` products from the last seven days of the Shoptet order date, including the cutoff, using `actions/checkOrderRefNumber.ts`.
+4. The same updater checks aggregated/completing states `300` and `301`.
 
-The route returns a JSON success message if all awaited calls complete, otherwise it logs the exception and returns `Response.error()`. The individual feed/send workflows also catch some errors internally and return status objects; the cron route does not branch on those returned status values.
+The route returns `status`, `message`, and individual `results` (`feeds`, `sendOrders`, `newOrders`, `aggregatedOrders`). It handles each operation's returned result and thrown exceptions independently; both status passes still run after earlier failures. Successful runs return HTTP 200, failed steps or an unsuccessful import return HTTP 500, and invalid authorization or an unconfigured secret returns HTTP 401. Submission `info` is nonfatal and can still describe required manual review. Import errors swallowed inside the unchanged feed importer cannot be inferred by the route.
 
 ### Order submission
 
-- `db/getNewOrder.ts` queries the `products` collection for `AltumOrderID == null`, assigns one UUID-derived 16-character `RefNumber` to all selected products, persists that reference to each product, then calls `utils/createKontriOrder.ts`.
-- `utils/createKontriOrder.ts` produces the Kontri request shape and derives numeric article IDs from the third hyphen-separated segment of `orderItemCode`.
+- `db/getNewOrder.ts` reads products with `AltumOrderID == null`, rejects historical references/non-new states, resolves IDs using one active cache, and atomically claims at most 450 products with a stable reference and API ID/quantity snapshot before returning a request.
+- `utils/createKontriOrder.ts` uses only persisted `kontriApiId` and `kontriOrderedAmount`, with validated ID/reference limits. Original codes are not changed or used as fallback IDs.
 - `actions/sendOrder.ts` POSTs the request to `GCP_SERVER_ADDRESS` as JSON.
-- `actions/triggerOrdersSend.ts` interprets response codes and writes order/status/shortage fields with `db/updateProduct.ts`. Some unexpected outcomes generate email via `utils/sendOrderInfoMail.ts` and `actions/sendMail.ts`.
-- `db/getUnconfirmedOrders.ts` selects status code `90`, groups products by `AltumOrderID`, and rebuilds a Kontri order for retry.
+- `actions/triggerOrdersSend.ts` matches shortages by persisted API ID, allocates shared deficits once with older-order priority, and persists responses through `db/persistKontriProducts.ts`. Result transactions validate references and order identity and protect known quantities/advanced states. Safe errors and uncertain quantities generate email through `actions/sendMail.ts`.
+- `db/getUnconfirmedOrders.ts` selects status `90` plus historical pending products with references, groups by `RefNumber`, and returns reconciliation groups, not resend requests. Successful lookups attach the real order ID and flag manual quantity checks; unsuccessful lookups block new sending.
+
+### Read-only mapping preview
+
+`components/KontriMappingPreviewButton.tsx` invokes `actions/previewKontriMapping.ts`.
+`db/getPendingProducts.ts` reads products with `AltumOrderID == null` without assigning references.
+`db/readKontriMapping.ts` reads one active cache version using the full Firestore SDK and validates
+its chunks and SHA-256 hash. `utils/resolveKontriProduct.ts` resolves both catalog and API IDs,
+verifies EAN when present, and blocks ambiguous or conflicting matches. The dialog offers search,
+a blocked-only filter, and pagination. This workflow performs no writes or order API calls;
+submission uses the same resolver independently and never consumes the client preview result.
 
 ### Status checks
 
 `utils/soapClient.ts` creates a SOAP client against the Kontri WSDL using `KONTRI_API_USER` and `KONTRI_API_PASSWORD`. `actions/checkOrder.ts` queries by Altum order ID; `actions/checkOrderRefNumber.ts` queries by reference number; `actions/checkServiceStatus.ts` calls the service health operation. The UI opens `components/OrderInfoModal.tsx` for successful order responses.
 
-The status updater groups products by `RefNumber`. It considers status `100` orders from the preceding three days and status `300` groups for the aggregated-state pass. Its status mapping is in `actions/updateOrdersState.ts`.
+The status updater selects status `100` with `date >= now - 7 days`, using the Shoptet order date rather than Kontri submission time, and orders by date then document ID. Older state `100` products intentionally stop being checked. The aggregated pass selects status `300`/`301` without a date cutoff and orders by document ID. Queries use 1000-document pages and collect all pages within their filters before grouping by `RefNumber`. Each pass waits 2.5 seconds between groups and continues after unchanged states or failures. API code `200` and a recognized status are required before any writes; a `Nowe` response cannot regress an aggregated order. Results include attempted group and failure counts.
+
+The article-count heuristic in `actions/updateOrdersState.ts` is intentionally retained: aggregated/completing responses select `300` when article count exceeds local rows plus one, otherwise `301`. This does not prove aggregate identity or quantities and is not specified by the supplied PDF. Updates remain separate Lite writes; partial failures and overlapping runs remain possible. Pagination removes the total product cap but does not remove deployment runtime limits for a large backlog.
 
 ## 5. Module and Dependency Map
 
@@ -115,17 +128,17 @@ There is no separate service/repository framework or dependency-injection contai
 
 Firestore is initialized in `db/init.ts` using the Firebase web SDK's Firestore Lite client. The configured project ID is `leontyna-kontri`; `FIREBASE_API_KEY` is read from the environment. The primary collection is `products`.
 
-`types/ShopOrder.ts` describes the Shoptet product/order row plus processing fields including `AltumOrderID`, `RefNumber`, `kontriStatusCode`, `kontriStatusName`, `kontriOrderCode`, and `shortage`. `db/addProduct.ts` creates document IDs as `<code>_<orderItemCode>`, initializes new rows with status `0`, and skips an existing document. `db/updateProduct.ts` uses the same ID convention.
+`types/ShopOrder.ts` includes order/status fields plus `kontriApiId`, `kontriMappingVersion`, `kontriOrderedAmount`, and `kontriReconciliationRequired`. `db/addProduct.ts` creates document IDs as `<code>_<orderItemCode>`, initializes new rows with status `0`, and skips an existing document. `db/updateProduct.ts` prefers the actual `fID` and falls back to the original key convention. Preparation and response persistence use the full Firestore SDK for transactions.
 
 Statuses written or interpreted in source include:
 
-| Code                | Source behavior                                                                                                 |
-| ------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `0`                 | Imported item; not yet submitted (`db/addProduct.ts`).                                                          |
-| `80`                | Kontri response marks products unavailable (`actions/triggerOrdersSend.ts`).                                    |
-| `90`                | Unconfirmed response; later selected for resend (`actions/triggerOrdersSend.ts`, `db/getUnconfirmedOrders.ts`). |
-| `100`               | Submitted/ordered response; includes Kontri order fields and shortage quantity when present.                    |
-| `300`, `301`, `400` | Set by the status updater after SOAP status checks; specific mapping is in `actions/updateOrdersState.ts`.      |
+| Code                | Source behavior                                                                                            |
+| ------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `0`                 | Imported item; not yet submitted (`db/addProduct.ts`).                                                     |
+| `80`                | Kontri response marks products unavailable (`actions/triggerOrdersSend.ts`).                               |
+| `90`                | Prepared or uncertain request; later selected for status lookup, never automatic POST replay.              |
+| `100`               | Submitted/ordered response; includes Kontri order fields and shortage quantity when present.               |
+| `300`, `301`, `400` | Set by the status updater after SOAP status checks; specific mapping is in `actions/updateOrdersState.ts`. |
 
 The enum values for the external order status are in `types/api/CheckOrderResponse.ts`. Firestore security rules, indexes, retention, and operational backup configuration are not present in this repository.
 
@@ -148,7 +161,7 @@ Environment variable names above are taken from source; this document intentiona
 - Framework/build: Next.js 14; `npm run dev`, `npm run build`, and `npm run start` delegate to Next.js.
 - Lint: `npm run lint` runs `next lint`. The inspected run completed with one warning: `components/ProductsTable.tsx` has a `useEffect` missing the `shopOrders` dependency.
 - Type checking: `tsconfig.json` enables strict mode; there is no package script. `./node_modules/.bin/tsc --noEmit` completed successfully in this environment.
-- Automated tests: no test script, test framework configuration, or test/spec files were found.
+- Automated tests: `npm test -- <test paths>` runs focused Vitest tests. Cron/status regression coverage is in `app/api/cron/route.test.ts`, `actions/updateOrdersState.test.ts`, and `db/getProducts.test.ts`; mapping, submission, and persistence have additional mocked tests.
 - CI: no checked-in `.github` workflow or other YAML workflow file was found.
 - Deployment: `vercel.json` configures the cron job. `Dockerfile` uses `node:20-alpine`, runs `npm install`, builds with `npm run build`, then starts with `npm run start`.
 
@@ -156,16 +169,16 @@ The lint and type-check commands above were executed while preparing this map. A
 
 ## 8. Feature-to-File Index
 
-| Task / feature                  | Start here                                | Related files                                                                                                                                 | Relevant tests |
-| ------------------------------- | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
-| Display and paginate products   | `app/(with-navbar)/page.tsx`              | `components/ProductsTable.tsx`, `db/getProducts.ts`, `utils/constants.ts`                                                                     | None found.    |
-| Import Shoptet feed rows        | `actions/feedsDownload.ts`                | `db/getLatestDate.ts`, `db/addProduct.ts`, `utils/formatDate.ts`, `app/api/cron/route.ts`                                                     | None found.    |
-| Create or resend Kontri orders  | `actions/triggerOrdersSend.ts`            | `db/getNewOrder.ts`, `db/getUnconfirmedOrders.ts`, `actions/sendOrder.ts`, `db/updateProduct.ts`, `utils/createKontriOrder.ts`                | None found.    |
-| Check order state               | `actions/checkOrder.ts`                   | `actions/checkOrderRefNumber.ts`, `actions/updateOrdersState.ts`, `utils/soapClient.ts`, `db/getProducts.ts`, `components/OrderInfoModal.tsx` | None found.    |
-| Check Kontri availability       | `components/CheckServiceStatusButton.tsx` | `actions/checkServiceStatus.ts`, `utils/soapClient.ts`, `components/NavBar.tsx`                                                               | None found.    |
-| Send operational/error email    | `actions/sendMail.ts`                     | `utils/sendOrderInfoMail.ts`, `actions/triggerOrdersSend.ts`                                                                                  | None found.    |
-| Change persisted product fields | `db/updateProduct.ts`                     | `types/ShopOrder.ts`, `actions/triggerOrdersSend.ts`, `actions/updateOrdersState.ts`                                                          | None found.    |
-| Change scheduled processing     | `app/api/cron/route.ts`                   | `vercel.json`, `actions/feedsDownload.ts`, `actions/triggerOrdersSend.ts`, `actions/updateOrdersState.ts`                                     | None found.    |
+| Task / feature                  | Start here                                | Related files                                                                                                                                 | Relevant tests                                                |
+| ------------------------------- | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| Display and paginate products   | `app/(with-navbar)/page.tsx`              | `components/ProductsTable.tsx`, `db/getProducts.ts`, `utils/constants.ts`                                                                     | None found.                                                   |
+| Import Shoptet feed rows        | `actions/feedsDownload.ts`                | `db/getLatestDate.ts`, `db/addProduct.ts`, `utils/formatDate.ts`, `app/api/cron/route.ts`                                                     | None found.                                                   |
+| Create or resend Kontri orders  | `actions/triggerOrdersSend.ts`            | `db/getNewOrder.ts`, `db/getUnconfirmedOrders.ts`, `actions/sendOrder.ts`, `db/updateProduct.ts`, `utils/createKontriOrder.ts`                | None found.                                                   |
+| Check order state               | `actions/checkOrder.ts`                   | `actions/checkOrderRefNumber.ts`, `actions/updateOrdersState.ts`, `utils/soapClient.ts`, `db/getProducts.ts`, `components/OrderInfoModal.tsx` | `actions/updateOrdersState.test.ts`, `db/getProducts.test.ts` |
+| Check Kontri availability       | `components/CheckServiceStatusButton.tsx` | `actions/checkServiceStatus.ts`, `utils/soapClient.ts`, `components/NavBar.tsx`                                                               | None found.                                                   |
+| Send operational/error email    | `actions/sendMail.ts`                     | `utils/sendOrderInfoMail.ts`, `actions/triggerOrdersSend.ts`                                                                                  | None found.                                                   |
+| Change persisted product fields | `db/updateProduct.ts`                     | `types/ShopOrder.ts`, `actions/triggerOrdersSend.ts`, `actions/updateOrdersState.ts`                                                          | None found.                                                   |
+| Change scheduled processing     | `app/api/cron/route.ts`                   | `vercel.json`, `actions/feedsDownload.ts`, `actions/triggerOrdersSend.ts`, `actions/updateOrdersState.ts`                                     | `app/api/cron/route.test.ts`                                  |
 
 ## 9. Architectural Observations
 

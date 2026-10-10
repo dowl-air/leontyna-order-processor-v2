@@ -18,6 +18,10 @@ type ShopOrder = {
     kontriOrderCode?: string;
     RefNumber?: string;
     fID?: string;
+    kontriApiId?: string;
+    kontriMappingVersion?: string;
+    kontriOrderedAmount?: number;
+    kontriReconciliationRequired?: boolean;
 };
 
 export default ShopOrder;

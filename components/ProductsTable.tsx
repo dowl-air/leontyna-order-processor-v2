@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Download } from "lucide-react";
 import { downloadKontriFeed } from "@/actions/downloadKontriFeed";
+import { KontriMappingPreviewButton } from "./KontriMappingPreviewButton";
 
 import ShopOrder from "@/types/ShopOrder";
 import { TABLE_ITEMS_FETCH_COUNT } from "@/utils/constants";
@@ -148,7 +149,7 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
                 <h2 className="text-lg lg:text-2xl font-bold px-4">
                     <span className="text-primary">Kontri</span> produkty z objednávek
                 </h2>
-                <div className="flex flex-col md:flex-row gap-2 px-3">
+                <div className="flex flex-col md:flex-row md:flex-wrap gap-2 px-3">
                     <button className="btn btn-sm md:btn-md btn-square btn-outline btn-primary w-full" onClick={refreshShopOrders}>
                         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
                             <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
@@ -169,6 +170,7 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
                         {kontriFeedLoading ? <span className="loading loading-spinner loading-xs" /> : <Download size={18} aria-hidden="true" />}
                         Vynutit stažení Kontri feedu
                     </button>
+                    <KontriMappingPreviewButton />
                     <button className="btn btn-sm md:btn-md btn-outline btn-primary" onClick={triggerOrders}>
                         Vynutit odeslání objednávek
                     </button>
@@ -210,6 +212,9 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
                                         <div className="text-nowrap cursor-copy" onClick={(e) => copyInnerText(e.target)}>
                                             {order.orderItemCode}
                                         </div>
+                                        {order.kontriApiId && (
+                                            <div className="text-xs text-base-content/70 text-nowrap">API ID: {order.kontriApiId}</div>
+                                        )}
                                     </td>
                                     <td>
                                         <div className="cursor-copy" onClick={(e) => copyInnerText(e.target)}>
@@ -252,7 +257,12 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
                                             {order.RefNumber}
                                         </div>
                                     </td>
-                                    <td className={`text-center ${order.shortage ? "text-error font-bold" : ""}`}>{order.shortage}</td>
+                                    <td
+                                        className={`text-center ${order.kontriReconciliationRequired ? "text-warning font-bold" : order.shortage ? "text-error font-bold" : ""}`}
+                                        title={order.kontriReconciliationRequired ? "Nedostatky nebyly potvrzeny původní odpovědí Kontri" : undefined}
+                                    >
+                                        {order.kontriReconciliationRequired ? "Ověřit" : order.shortage}
+                                    </td>
                                     <td className="text-center">
                                         {order.kontriStatusCode !== undefined ? (
                                             <div className="flex flex-col gap-1 items-center">

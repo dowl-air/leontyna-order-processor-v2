@@ -26,7 +26,7 @@ npm run build
 npm run start
 ```
 
-Focused Vitest tests are available through `npm test -- <test paths>` for the Kontri mapping cache. There is no type-check script; use `./node_modules/.bin/tsc --noEmit`. The Docker image uses Node.js 20; use a compatible Node runtime.
+Focused Vitest tests are available through `npm test -- <test paths>` for mapping, submission, status checks, and cron orchestration. There is no type-check script; use `./node_modules/.bin/tsc --noEmit`. The Docker image uses Node.js 20; use a compatible Node runtime.
 
 The application reads these environment variables: `FIREBASE_API_KEY`, `SHOPTET_URL`, `SHOPTET_URL_SK`, `GCP_SERVER_ADDRESS`, `KONTRI_API_USER`, `KONTRI_API_PASSWORD`, `CRON_SECRET`, `SMTP_SERVER_USERNAME`, `SMTP_SERVER_PASSWORD`, and `SITE_MAIL_RECIEVER` (spelling as used in source). Supply values through the local/deployment environment; do not commit secrets or copy values into documentation.
 
@@ -41,9 +41,14 @@ The application reads these environment variables: `FIREBASE_API_KEY`, `SHOPTET_
 
 ## Testing and Safety
 
-- The Kontri cache uses `KONTRI_FEED_LOGIN` and `KONTRI_FEED_PASSWORD`, `fast-xml-parser`, versioned JSON chunks in `kontriMappings`, and a transactional pointer in `kontriMappingState/current`. See README for permissions and index configuration. The full Firestore SDK is used only for this cache; existing product operations still use Lite.
-- The manual Kontri feed button only updates the mapping cache. No daily cron or order-ID translation is enabled by this change. Do not submit live orders or write production mapping data merely to validate code.
+- The Kontri cache uses `KONTRI_FEED_LOGIN` and `KONTRI_FEED_PASSWORD`, `fast-xml-parser`, versioned JSON chunks in `kontriMappings`, and a transactional pointer in `kontriMappingState/current`. See README for permissions and index configuration. The full Firestore SDK is also used for atomic order preparation and result persistence; ordinary product operations still use Lite.
+- The manual Kontri feed button only updates the mapping cache. Order submission resolves IDs from the active cache and stores an immutable API ID/quantity/reference snapshot before POST. No daily cache schedule is enabled. Do not submit live orders or write production data merely to validate code.
 - Reject variant-count drops greater than 25% before storage and inside the publication transaction; exactly 25% and the first import are allowed. Notify by email with both counts. Keep rejected publication distinct from unchanged content in UI results.
+- The mapping preview remains read-only and diagnostic: submission uses the same resolver separately, never a client preview result. Resolve old API and new catalog IDs with EAN verification; conflicts and ambiguity must block matches. A match is not proof of retry safety or order eligibility.
+- Prepare at most 450 products atomically, checking their current fields and unclaimed/new status. Preserve original codes and document IDs. Requests use `kontriApiId` and `kontriOrderedAmount`; no code fallback is permitted. Persist results with `persistKontriProducts`, verifying the reference and confirmed order identity.
+- Never automatically replay uncertain or historical requests. Reconcile by `RefNumber`; failure blocks new submission. The API permits identical replay, but the full original payload is not persisted. Do not clear old references without operator verification. Missing shortage details require `kontriReconciliationRequired` and manual review, not a fabricated zero. Allocate shared shortages once with older-order priority. Retain known quantities and advanced statuses during concurrent/late replies.
+- Status checks load all pages of state `100` within the last seven days of the Shoptet `date` (inclusive cutoff, date/document-ID order); states `300`/`301` have no date cutoff. Group references only after all filtered pages are read. Require result code `200` and a recognized status before updates, continue after unchanged/failed groups, and wait a constant 2.5 seconds between groups. Retain the operator-approved article-count heuristic and individual Lite status writes; neither guarantees atomic aggregation verification.
+- Cron reports each step under `results`, returns HTTP 500 on failures, and skips reconciliation/submission after an unsuccessful import while still running both status passes. Require a configured secret and valid Bearer header (HTTP 401 otherwise). Test orchestration with mocks, never an authorized live cron call. The shared import checkpoint, partial-write risk, and deployment runtime limits remain operational constraints.
 
 - Add or update focused regression coverage for behavior changes. Use Vitest for the mapping parser, update workflow, server action, and mocked Firestore storage.
 - Before finishing, run `npm run lint` and `./node_modules/.bin/tsc --noEmit`; run `npm run build` when a production-build check is relevant and its environment prerequisites are available.
