@@ -2,6 +2,9 @@ This is a [Next.js](https://nextjs.org/) project bootstrapped with [`create-next
 
 ## Getting Started
 
+The project `.npmrc` uses the public npm registry. Keep committed lockfile URLs public.
+Set the Vercel project's Node.js Version to `24.x`; Node type definitions use major 24.
+
 First, run the development server:
 
 ```bash

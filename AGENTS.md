@@ -17,6 +17,9 @@ This repository is a single Next.js 14 App Router application for viewing Shopte
 ## Development Commands
 
 The repository has `package-lock.json` and no workspace configuration; use npm.
+The project `.npmrc` selects `https://registry.npmjs.org/`. Never commit internal registry
+URLs into the lockfile. Vercel uses Node.js 24 and `@types/node` major 24; the Docker
+runtime is still separately configured in `Dockerfile`.
 
 ```sh
 npm ci
