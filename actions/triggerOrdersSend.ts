@@ -25,14 +25,16 @@ async function notifyOrderProblem(message: string, subject = "[Kontri objednávk
     return " E-mailové upozornění se nepodařilo odeslat.";
 }
 
-async function notifyShortages(products: ShopOrder[], shortages: Map<string, number>, refNumber: string, orderId: string) {
+async function notifyShortages(products: ShopOrder[], shortages: Map<string, number>, refNumber: string, orderId?: string) {
     const missing = products.flatMap((product) => {
         const quantity = shortages.get(product.fID ?? `${product.code}_${product.orderItemCode}`) ?? 0;
         return quantity > 0 ? [{ product, quantity }] : [];
     });
     if (!missing.length) return "";
     const text = [
-        `Kontri objednávka ${refNumber} (Altum ID ${orderId}) má nedostatky.`,
+        orderId
+            ? `Kontri objednávka ${refNumber} (Altum ID ${orderId}) má nedostatky.`
+            : `Kontri objednávka ${refNumber} nevznikla kvůli skladovým nedostatkům (kód 80). Celé požadované množství je evidováno jako nedostatek.`,
         `Celkem chybí: ${missing.reduce((sum, item) => sum + item.quantity, 0)} ks`,
         ...missing.map(
             ({ product, quantity }) =>
@@ -87,13 +89,41 @@ const sendOrderHandler = async (orderObject: KontriOrder) => {
                     status: notification ? "info" : "success",
                     message: `Kontri objednávka ${refNumber} byla potvrzena (${orderResp.AltumOrderID}).${notification}`,
                 };
-            case 80:
+            case 80: {
+                const rejectedShortages = new Map(
+                    products.map((product) => {
+                        const quantity = product.kontriOrderedAmount;
+                        if (typeof quantity !== "number" || !Number.isFinite(quantity) || quantity <= 0)
+                            throw new Error("Invalid saved Kontri quantity for rejection.");
+                        return [product.fID ?? `${product.code}_${product.orderItemCode}`, quantity];
+                    }),
+                );
                 const rejectedUpdated = await persistKontriProducts(
-                    products.map((product) => ({ product, fields: { kontriStatusCode: 80, kontriStatusName: "Nedostupné" } })),
+                    products.map((product) => ({
+                        product,
+                        fields: {
+                            kontriStatusCode: 80,
+                            kontriStatusName: "Nedostupné",
+                            shortage: rejectedShortages.get(product.fID ?? `${product.code}_${product.orderItemCode}`)!,
+                            kontriReconciliationRequired: false,
+                        },
+                    })),
                     refNumber,
+                    false,
+                    true,
                 );
                 logKontriEvent("submission.rejected", refNumber, { code: 80, updated: rejectedUpdated });
-                return orderError(`Kontri odmítlo dostupnost položek objednávky ${refNumber}. Vyžaduje ruční kontrolu.`);
+                if (!rejectedUpdated)
+                    return {
+                        status: "error",
+                        message: `Kontri objednávka ${refNumber} nevznikla (kód 80). Nedostatky nebyly zapsány; email o nedostatcích nebyl odeslán.`,
+                    };
+                const notification = await notifyShortages(products, rejectedShortages, refNumber);
+                return {
+                    status: "error",
+                    message: `Kontri objednávka ${refNumber} nevznikla (kód 80). Celé požadované množství bylo zapsáno jako nedostatek.${notification}`,
+                };
+            }
             case 90:
             case 99:
                 return {

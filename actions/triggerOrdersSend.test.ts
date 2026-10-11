@@ -64,6 +64,47 @@ describe("sendOrders with persisted mapping", () => {
         });
     });
     afterEach(() => vi.useRealTimers());
+    it.each([1, 2])("records full saved shortages for code 80 with %s products", async (count) => {
+        const rejected = products.slice(0, count).map((product) => ({ ...product, orderItemAmount: 99 }));
+        mocks.newOrder.mockResolvedValue(createKontriOrder(rejected, "stable"));
+        mocks.send.mockResolvedValue({ Code: 80, Message: "" });
+        const result = await run();
+        for (const product of rejected) {
+            expect(mocks.update).toHaveBeenCalledWith(product, {
+                kontriStatusCode: 80,
+                kontriStatusName: "Nedostupné",
+                shortage: product.kontriOrderedAmount,
+                kontriReconciliationRequired: false,
+            });
+        }
+        expect(mocks.persist).toHaveBeenCalledWith(expect.any(Array), "stable", false, true);
+        expect(mocks.mail).toHaveBeenCalledTimes(1);
+        expect(mocks.mail).toHaveBeenCalledWith(
+            expect.objectContaining({
+                subject: "[Kontri objednávky] Nedostatky",
+                text: expect.stringContaining("nevznikla"),
+            }),
+        );
+        const text = mocks.mail.mock.calls[0][0].text;
+        expect(text).toContain(`Celkem chybí: ${count === 1 ? 2 : 5} ks`);
+        expect(text).toContain("stable");
+        expect(text).not.toContain("Altum ID");
+        expect(result.message).not.toContain("Vyžaduje ruční kontrolu");
+    });
+    it("does not email shortages when code 80 persistence makes no writes", async () => {
+        mocks.send.mockResolvedValue({ Code: 80 });
+        mocks.persist.mockResolvedValue(false);
+        expect((await run()).message).toContain("nebyly zapsány");
+        expect(mocks.mail).not.toHaveBeenCalled();
+    });
+    it("keeps saved code 80 shortages after SMTP failure without another POST", async () => {
+        mocks.send.mockResolvedValue({ Code: 80 });
+        mocks.mail.mockRejectedValue(new Error("SMTP failure"));
+        expect((await run()).message).toContain("E-mailové upozornění se nepodařilo odeslat");
+        expect(mocks.update).toHaveBeenCalledWith(products[0], expect.objectContaining({ shortage: 2, kontriReconciliationRequired: false }));
+        expect(mocks.send).toHaveBeenCalledTimes(1);
+        expect(mocks.mail).toHaveBeenCalledTimes(1);
+    });
     it.each([5, 1])("automatically reconciles a found Nowe order accepting %s units without POST", async (quantity) => {
         const group = quantityGroup();
         mocks.pending.mockResolvedValue([{ RefNumber: "stable", products: group }]);

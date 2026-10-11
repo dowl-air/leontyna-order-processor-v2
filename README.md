@@ -67,6 +67,19 @@ Interaction regression tests use the React 18.2 test renderer with mocked data a
 npm test -- components/ProductsTable.test.tsx
 ```
 
+## Manual Order Lookups
+
+The reference-number and Kontri-ID query buttons open the order detail for result code `200`.
+Other result codes close the detail and show an error alert containing the returned code,
+the queried identifier, and Kontri's message. If the message is missing, empty, or whitespace-only,
+the alert explicitly states that Kontri provided no error description and the order status
+was not verified. A code such as `80` without a message is not interpreted as a confirmed
+order outcome. The lookup does not modify products, clear references, or submit an order.
+
+```sh
+npm test -- components/ProductsTable.test.tsx -t 'order lookup'
+```
+
 ## Kontri Mapping Cache
 
 Set `KONTRI_FEED_LOGIN` and `KONTRI_FEED_PASSWORD` in the server environment, locally and on Vercel.
@@ -282,7 +295,16 @@ Codes `90`/`99` mean queued processing and return `info`, without error email or
 writes. Later runs look up or replay the same request. Code `101` is handled like `100`.
 Code `110` marks products with status `110` and retains the reference and payload for manual
 conflict resolution; it does not generate another reference or automatically retry that group.
-Code `80` also requires manual review. Other errors and timeouts retain status `90` for a later
+For submission code `80`, the operator-approved rule treats all saved requested quantities as
+shortages: persist `shortage = kontriOrderedAmount`, clear `kontriReconciliationRequired`, and
+retain status `80` / `Nedostupné`, references and request snapshots without inventing a Kontri ID.
+The API documentation confirms rejection due to stock shortages, but does not explicitly define
+this full-quantity rule. Snapshot validation guards the write. Only after successful persistence,
+send the shortage email with affected products/quantities and explicitly state that the Kontri
+order was not created. No-write results send no shortage email; SMTP failure retains saved
+shortages and reports a delivery warning. No historical backfill or retry-policy change is included.
+Code `80` still returns an error result because the order was not created.
+Other errors and timeouts retain status `90` for a later
 attempt and send safe error notifications. A failed retry stops new submission in that run;
 queued retries can coexist with new orders, and the combined result remains `info`.
 Do not clear references automatically: an old or queued request may already exist at Kontri.

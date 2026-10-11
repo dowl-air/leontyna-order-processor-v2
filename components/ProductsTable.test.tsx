@@ -15,6 +15,9 @@ vi.mock("@/actions/checkOrderRefNumber", () => ({ checkOrderByRefNumber: vi.fn()
 import ProductsTable from "./ProductsTable";
 import { KontriMappingModal } from "./KontriMappingModal";
 import { getProducts } from "@/db/getProducts";
+import { checkOrder } from "@/actions/checkOrder";
+import { checkOrderByRefNumber } from "@/actions/checkOrderRefNumber";
+import { OrderInfoModal } from "./OrderInfoModal";
 
 const product = {
     code: "order",
@@ -98,6 +101,56 @@ describe("ProductsTable pagination", () => {
             renderer = create(<ProductsTable initialShopOrders={[product]} />, { createNodeMock: () => ({}) });
         });
     }
+    it.each([
+        ["Referenční číslo", 80, ""],
+        ["Referenční číslo", "80", "   "],
+        ["Kontri ID", 80, ""],
+        ["Kontri ID", "80", "   "],
+        ["Referenční číslo", 500, "Nastala chyba při zjišťování stavu objednávky."],
+        ["Kontri ID", 500, "Nastala chyba při zjišťování stavu objednávky."],
+    ])("shows order lookup failure details for %s, code %s and message %j", async (lookup, Code, Message) => {
+        const dialog = { showModal: vi.fn(), close: vi.fn() };
+        vi.stubGlobal("document", { getElementById: vi.fn(() => dialog) });
+        vi.mocked(checkOrder).mockResolvedValue({ Code, Message });
+        vi.mocked(checkOrderByRefNumber).mockResolvedValue({ Code, Message });
+        mount();
+        await act(async () => {
+            await renderer.root
+                .findAllByType("button")
+                .find((button) => button.props.children === `Dotaz [${lookup}]`)!
+                .props.onClick();
+        });
+        const output = JSON.stringify(renderer.toJSON());
+        expect(output).toContain(
+            `Kontri dotaz selhal (kód ${Code}, ${lookup === "Kontri ID" ? lookup : lookup.toLowerCase()}: ${lookup === "Kontri ID" ? "123" : "stable"}).`,
+        );
+        expect(output).toContain(Message.trim() || "Kontri nevrátilo popis chyby. Stav objednávky nebyl ověřen.");
+        expect(dialog.showModal).toHaveBeenCalledOnce();
+        expect(dialog.close).toHaveBeenCalledOnce();
+        expect(getProducts).not.toHaveBeenCalled();
+    });
+    it.each([
+        ["Referenční číslo", 200],
+        ["Kontri ID", "200"],
+    ])("keeps the detail modal open for successful order lookup by %s", async (lookup, Code) => {
+        const dialog = { showModal: vi.fn(), close: vi.fn() };
+        vi.stubGlobal("document", { getElementById: vi.fn(() => dialog) });
+        const response = { Code, Message: "", AltumOrderID: "123" };
+        vi.mocked(checkOrder).mockResolvedValue(response);
+        vi.mocked(checkOrderByRefNumber).mockResolvedValue(response);
+        mount();
+        await act(async () => {
+            await renderer.root
+                .findAllByType("button")
+                .find((button) => button.props.children === `Dotaz [${lookup}]`)!
+                .props.onClick();
+        });
+        expect(renderer.root.findByType(OrderInfoModal).props.order).toEqual(response);
+        expect(dialog.showModal).toHaveBeenCalledOnce();
+        expect(dialog.close).not.toHaveBeenCalled();
+        expect(JSON.stringify(renderer.toJSON())).not.toContain("Kontri dotaz selhal");
+        expect(getProducts).not.toHaveBeenCalled();
+    });
     it("opens the mapping modal for the clicked product and removes it on close", async () => {
         mount();
         expect(renderer.root.findAllByType(KontriMappingModal)).toHaveLength(0);

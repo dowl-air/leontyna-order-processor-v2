@@ -134,15 +134,19 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
         setMessages([...messages, { message: "Text byl zkopírován do schránky.", type: "info" }]);
     };
 
+    const showOrderLookupError = (response: OrderResponseResult, lookup: string) => {
+        closeModal();
+        const description = response.Message?.trim() || "Kontri nevrátilo popis chyby. Stav objednávky nebyl ověřen.";
+        setMessages((previous) => [...previous, { message: `Kontri dotaz selhal (kód ${response.Code}, ${lookup}). ${description}`, type: "error" }]);
+    };
+
     const checkOrderStatus = async (orderNumber: string | null) => {
         if (!orderNumber) return setMessages([...messages, { message: "No order number.", type: "error" }]);
         setModalOrder(null);
         openModal();
         const shopOrdersAPI = await checkOrder(orderNumber);
         if (shopOrdersAPI.Code !== 200 && shopOrdersAPI.Code !== "200") {
-            closeModal();
-            console.log(shopOrdersAPI);
-            return setMessages([...messages, { message: shopOrdersAPI.Message, type: "error" }]);
+            return showOrderLookupError(shopOrdersAPI, `Kontri ID: ${orderNumber}`);
         }
         setModalOrder(shopOrdersAPI);
     };
@@ -153,9 +157,7 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
         openModal();
         const shopOrdersAPI = await checkOrderByRefNumber(refNumber);
         if (shopOrdersAPI.Code !== 200 && shopOrdersAPI.Code !== "200") {
-            closeModal();
-            console.log(shopOrdersAPI);
-            return setMessages([...messages, { message: shopOrdersAPI.Message, type: "error" }]);
+            return showOrderLookupError(shopOrdersAPI, `referenční číslo: ${refNumber}`);
         }
         setModalOrder(shopOrdersAPI);
     };
