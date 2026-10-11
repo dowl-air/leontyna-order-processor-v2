@@ -114,6 +114,35 @@ Run focused tests with:
 npm test -- utils/kontriFeed.test.ts actions/downloadKontriFeed.test.ts db/kontriMapping.test.ts actions/sendMail.test.ts
 ```
 
+## Product Mapping Detail
+
+Each product row has a question-mark button beside its product/API codes. It opens a read-only
+dialog that loads the validated active Kontri cache on demand, without updating the feed,
+saving product fields, or submitting an order. The detail uses the catalog ID from
+`AK-<model>-<identifier>` only, without API-ID or EAN fallback, so mismatching EANs remain visible.
+This diagnostic lookup does not change the order-submission resolver described below.
+
+The dialog compares Shoptet and Kontri EANs and catalog `id_instancji` values, and shows Kontri
+`id_instancji_API` (the ordering code), the active cache version, and the feed's own date.
+Matching nonempty EANs are green; mismatches and missing Shoptet EANs are orange.
+Leading zeros are preserved and surrounding Shoptet EAN whitespace is ignored.
+Unknown/ambiguous catalog IDs and cache failures are shown explicitly; failed reads can be retried.
+Missing feed dates are shown as "Neuvedeno" rather than inferred from the current time.
+
+The result describes the current feed, not the mapping originally used to submit an order.
+The saved API ID is displayed separately when available; opening this dialog never changes
+the saved request or its retry behavior. Closing the dialog discards late responses.
+The cache reader validates and reads all active chunks per lookup; it is not a per-record
+Firestore query and no new index or collection is required.
+
+Focused checks:
+
+```sh
+npm test -- actions/getKontriProductMapping.test.ts components/KontriMappingModal.test.tsx
+npm test -- components/ProductsTable.test.tsx -t 'mapping question|mapping modal'
+npm test -- db/readKontriMapping.test.ts -t 'pointer|feed date'
+```
+
 ## Mapped Order Submission
 
 The resolver compares the last identifier in `AK-<model>-<identifier>` with both catalog and API IDs.

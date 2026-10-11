@@ -23,9 +23,14 @@ describe("readKontriMapping", () => {
         mocks.getDocs.mockResolvedValue({ docs: [chunk()] });
     });
     it("reads the pointer once and loads only its version", async () => {
-        expect(await readKontriMapping()).toEqual({ version: "active", records });
+        expect(await readKontriMapping()).toEqual({ version: "active", feedDate: null, records });
         expect(mocks.getDoc).toHaveBeenCalledOnce();
         expect(mocks.getDocs).toHaveBeenCalledWith([{}, "kontriMappings", "active", "chunks"]);
+    });
+    it("returns the feed date from the same active pointer as the records", async () => {
+        mocks.getDoc.mockResolvedValue({ exists: () => true, data: () => ({ ...metadata, feedDate: "2026-10-11 05:55" }) });
+        expect(await readKontriMapping()).toEqual({ version: "active", feedDate: "2026-10-11 05:55", records });
+        expect(mocks.getDoc).toHaveBeenCalledOnce();
     });
     it("rejects a missing active pointer", async () => {
         mocks.getDoc.mockResolvedValue({ exists: () => false });

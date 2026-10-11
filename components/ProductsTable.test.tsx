@@ -10,8 +10,10 @@ vi.mock("@/actions/checkOrder", () => ({ checkOrder: vi.fn() }));
 vi.mock("@/actions/triggerOrdersSend", () => ({ sendOrders: vi.fn() }));
 vi.mock("@/db/getProducts", () => ({ getProducts: vi.fn() }));
 vi.mock("./OrderInfoModal", () => ({ OrderInfoModal: () => null }));
+vi.mock("./KontriMappingModal", () => ({ KontriMappingModal: () => null }));
 vi.mock("@/actions/checkOrderRefNumber", () => ({ checkOrderByRefNumber: vi.fn() }));
 import ProductsTable from "./ProductsTable";
+import { KontriMappingModal } from "./KontriMappingModal";
 import { getProducts } from "@/db/getProducts";
 
 const product = {
@@ -56,6 +58,11 @@ describe("ProductsTable shortage certainty", () => {
         expect(html).toContain("API ID: 900");
         expect(html).toContain("AK-5-100");
     });
+    it("provides a mapping question button for each product with or without a saved API ID", () => {
+        vi.stubGlobal("React", React);
+        const html = renderToStaticMarkup(<ProductsTable initialShopOrders={[product, { ...product, code: "second", kontriApiId: "900" }]} />);
+        expect(html.match(/aria-label="Zobrazit Kontri mapování AK-5-100"/g)).toHaveLength(2);
+    });
 });
 
 describe("ProductsTable pagination", () => {
@@ -82,6 +89,16 @@ describe("ProductsTable pagination", () => {
             renderer = create(<ProductsTable initialShopOrders={[product]} />, { createNodeMock: () => ({}) });
         });
     }
+    it("opens the mapping modal for the clicked product and removes it on close", async () => {
+        mount();
+        expect(renderer.root.findAllByType(KontriMappingModal)).toHaveLength(0);
+        act(() => renderer.root.findByProps({ "aria-label": "Zobrazit Kontri mapování AK-5-100" }).props.onClick());
+        const modal = renderer.root.findByType(KontriMappingModal);
+        expect(modal.props.product).toEqual(product);
+        act(() => modal.props.onClose());
+        expect(renderer.root.findAllByType(KontriMappingModal)).toHaveLength(0);
+        expect(getProducts).not.toHaveBeenCalled();
+    });
     it("loads once while pending and uses the newest cursor only after another intersection", async () => {
         let resolvePage!: (products: ShopOrder[]) => void;
         vi.mocked(getProducts).mockImplementationOnce(

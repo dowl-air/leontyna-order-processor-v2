@@ -3,11 +3,11 @@ import { collection, doc, getDoc, getDocs, getFirestore } from "firebase/firesto
 import type { KontriMappingRecord } from "@/utils/kontriFeed";
 import { db } from "./init";
 
-export async function readKontriMapping(): Promise<{ version: string; records: KontriMappingRecord[] }> {
+export async function readKontriMapping(): Promise<{ version: string; feedDate: string | null; records: KontriMappingRecord[] }> {
     const database = getFirestore(db.app);
     const pointer = await getDoc(doc(database, "kontriMappingState", "current"));
     if (!pointer.exists()) throw new Error("Missing active Kontri mapping.");
-    const { version, chunkCount, recordCount, hash } = pointer.data();
+    const { version, chunkCount, recordCount, hash, feedDate } = pointer.data();
     if (
         typeof version !== "string" ||
         !version ||
@@ -46,5 +46,9 @@ export async function readKontriMapping(): Promise<{ version: string; records: K
     for (const field of ["catalogId", "apiId", "ean"] as const) {
         if (new Set(records.map((record) => record[field])).size !== records.length) throw new Error("Duplicate mapping records.");
     }
-    return { version, records };
+    return {
+        version,
+        feedDate: typeof feedDate === "string" && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(feedDate) ? feedDate : null,
+        records,
+    };
 }

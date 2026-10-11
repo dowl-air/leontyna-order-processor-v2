@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Download } from "lucide-react";
+import { CircleHelp, Download } from "lucide-react";
 import { downloadKontriFeed } from "@/actions/downloadKontriFeed";
 
 import ShopOrder from "@/types/ShopOrder";
@@ -11,6 +11,7 @@ import { sendOrders } from "@/actions/triggerOrdersSend";
 import { getProducts } from "@/db/getProducts";
 import { formatDate, formatTime } from "@/utils/formatDate";
 import { OrderInfoModal } from "./OrderInfoModal";
+import { KontriMappingModal } from "./KontriMappingModal";
 import { OrderResponseResult } from "@/types/api/CheckOrderResponse";
 import { checkOrderByRefNumber } from "@/actions/checkOrderRefNumber";
 
@@ -25,6 +26,7 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
     const [kontriFeedLoading, setKontriFeedLoading] = useState(false);
     const [messages, setMessages] = useState<Message[]>([]);
     const [modalOrder, setModalOrder] = useState<OrderResponseResult | null>(null);
+    const [mappingProduct, setMappingProduct] = useState<ShopOrder | null>(null);
     const observer = useRef<IntersectionObserver | null>(null);
     const pagination = useRef({ pending: false, hasMore: initialShopOrders.length > 0, generation: 0 });
 
@@ -223,12 +225,25 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
                                         </div>
                                     </td>
                                     <td>
-                                        <div className="text-nowrap cursor-copy" onClick={(e) => copyInnerText(e.target)}>
-                                            {order.orderItemCode}
+                                        <div className="flex items-center gap-2">
+                                            <div>
+                                                <div className="text-nowrap cursor-copy" onClick={(e) => copyInnerText(e.target)}>
+                                                    {order.orderItemCode}
+                                                </div>
+                                                {order.kontriApiId && (
+                                                    <div className="text-xs text-base-content/70 text-nowrap">API ID: {order.kontriApiId}</div>
+                                                )}
+                                            </div>
+                                            <button
+                                                type="button"
+                                                className="btn btn-ghost btn-sm btn-square shrink-0"
+                                                title="Zobrazit Kontri mapování"
+                                                aria-label={`Zobrazit Kontri mapování ${order.orderItemCode}`}
+                                                onClick={() => setMappingProduct(order)}
+                                            >
+                                                <CircleHelp size={18} aria-hidden="true" />
+                                            </button>
                                         </div>
-                                        {order.kontriApiId && (
-                                            <div className="text-xs text-base-content/70 text-nowrap">API ID: {order.kontriApiId}</div>
-                                        )}
                                     </td>
                                     <td>
                                         <div className="cursor-copy" onClick={(e) => copyInnerText(e.target)}>
@@ -343,6 +358,13 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
             </div>
 
             <OrderInfoModal order={modalOrder} onClose={closeModal} />
+            {mappingProduct && (
+                <KontriMappingModal
+                    key={mappingProduct.code + mappingProduct.orderItemCode}
+                    product={mappingProduct}
+                    onClose={() => setMappingProduct(null)}
+                />
+            )}
         </>
     );
 };
