@@ -10,12 +10,17 @@ import { sendMail } from "./sendMail";
 import { checkOrderByRefNumber } from "./checkOrderRefNumber";
 import { reconcileKontriShortages } from "@/utils/reconcileKontriShortages";
 import ShopOrder from "@/types/ShopOrder";
+import { logKontriError, logKontriEvent, logKontriResponse } from "@/utils/kontriDiagnostics";
 
 async function notifyOrderProblem(message: string, subject = "[Kontri objednávky] Kontrola zpracování") {
     try {
-        if (await sendMail({ subject, text: message })) return "";
-    } catch {
-        console.error("Kontri order notification failed.");
+        if (await sendMail({ subject, text: message })) {
+            logKontriEvent("notification.sent", "");
+            return "";
+        }
+        logKontriEvent("notification.noResult", "");
+    } catch (error) {
+        logKontriError("notification", "", error);
     }
     return " E-mailové upozornění se nepodařilo odeslat.";
 }
@@ -50,6 +55,7 @@ const sendOrderHandler = async (orderObject: KontriOrder) => {
         const { products, ...orderReq } = orderObject;
         const refNumber = orderObject.RefNumber;
         const orderResp = await sendOrder(orderReq);
+        logKontriResponse("submission.handler", refNumber, orderResp);
         switch (Number(orderResp.Code)) {
             case 100:
             case 101:
@@ -71,6 +77,7 @@ const sendOrderHandler = async (orderObject: KontriOrder) => {
                     })),
                     refNumber,
                 );
+                logKontriEvent("submission.persisted", refNumber, { updated, shortagesKnown: !!shortages });
                 if (!shortages) {
                     const message = `Kontri objednávka ${refNumber} byla potvrzena (${orderResp.AltumOrderID}), ale nedostatky jsou zatím neznámé. Další běh je zkusí doplnit z neagregované objednávky.`;
                     return { status: "info", message: message + (await notifyOrderProblem(message)) };
@@ -81,10 +88,11 @@ const sendOrderHandler = async (orderObject: KontriOrder) => {
                     message: `Kontri objednávka ${refNumber} byla potvrzena (${orderResp.AltumOrderID}).${notification}`,
                 };
             case 80:
-                await persistKontriProducts(
+                const rejectedUpdated = await persistKontriProducts(
                     products.map((product) => ({ product, fields: { kontriStatusCode: 80, kontriStatusName: "Nedostupné" } })),
                     refNumber,
                 );
+                logKontriEvent("submission.rejected", refNumber, { code: 80, updated: rejectedUpdated });
                 return orderError(`Kontri odmítlo dostupnost položek objednávky ${refNumber}. Vyžaduje ruční kontrolu.`);
             case 90:
             case 99:
@@ -103,6 +111,7 @@ const sendOrderHandler = async (orderObject: KontriOrder) => {
                     })),
                     refNumber,
                 );
+                logKontriEvent("submission.conflict", refNumber, { code: 110 });
                 return orderError(
                     `Kontri reference ${refNumber} patří jinému požadavku (110). Reference nebyla změněna; konflikt vyžaduje ruční kontrolu.`,
                 );
@@ -111,7 +120,8 @@ const sendOrderHandler = async (orderObject: KontriOrder) => {
                     `Kontri objednávka ${refNumber} nebyla potvrzena (kód ${Number(orderResp.Code)}). Reference a požadavek zůstávají uložené pro další pokus.`,
                 );
         }
-    } catch {
+    } catch (error) {
+        logKontriError("submission.handler", orderObject.RefNumber, error);
         return orderError(
             `Odeslání nebo uložení odpovědi objednávky ${orderObject.RefNumber} selhalo. Další běh objednávku dohledá nebo zopakuje uložený požadavek se stejnou referencí.`,
         );
@@ -124,16 +134,22 @@ export const sendOrders = async () => {
         let retried = false;
         let requiresReviewOrWaiting = false;
         const uncertainOrders = await getUnconfirmedOrders();
+        logKontriEvent("workflow.pending", "", { groups: uncertainOrders.length });
         for (const order of uncertainOrders) {
             await new Promise((resolve) => setTimeout(resolve, 2100));
-            const response = await checkOrderByRefNumber(order.RefNumber).catch(() => null);
+            const response = await checkOrderByRefNumber(order.RefNumber).catch((error) => {
+                logKontriError("workflow.lookup", order.RefNumber, error);
+                return null;
+            });
             if (Number(response?.Code) !== 200) {
                 if (order.products.some((product) => product.AltumOrderID && product.AltumOrderID !== order.RefNumber)) {
+                    logKontriEvent("retry.skipped.confirmed", order.RefNumber);
                     messages.push(`Nedostatky potvrzené objednávky ${order.RefNumber} zatím nelze zjistit. Objednávka nebyla znovu odeslána.`);
                     requiresReviewOrWaiting = true;
                     continue;
                 }
                 const retry = await prepareKontriRetry(order.products, order.RefNumber);
+                logKontriEvent("retry.prepared", order.RefNumber, { products: retry.products.length });
                 await new Promise((resolve) => setTimeout(resolve, 2100));
                 const result = await sendOrderHandler(retry);
                 retried = true;
@@ -170,12 +186,14 @@ export const sendOrders = async () => {
                 !!shortages,
             );
             if (!updated) {
+                logKontriEvent("reconciliation.noWrite", order.RefNumber, { shortagesKnown: !!shortages });
                 messages.push(
                     `Objednávka ${order.RefNumber}: výsledek nebyl zapsán (již potvrzená množství nebo souběžná agregace).${rejectionDetail ? ` Diagnostika: ${rejectionDetail}` : ""}`,
                 );
                 requiresReviewOrWaiting = true;
                 continue;
             }
+            logKontriEvent("reconciliation.persisted", order.RefNumber, { shortagesKnown: !!shortages });
             if (shortages) {
                 const notification = await notifyShortages(order.products, shortages, order.RefNumber, String(response!.AltumOrderID));
                 if (notification) requiresReviewOrWaiting = true;
@@ -189,6 +207,7 @@ export const sendOrders = async () => {
             }
         }
         const order = await getNewOrder();
+        logKontriEvent("workflow.prepared", order?.RefNumber ?? "", { products: order?.products.length ?? 0 });
         if (order) {
             await new Promise((resolve) => setTimeout(resolve, 2100));
             const result = await sendOrderHandler(order);
@@ -202,9 +221,10 @@ export const sendOrders = async () => {
             status: retried && !requiresReviewOrWaiting ? "success" : "info",
             message: messages.join(" | ") || "Žádné nové produkty k odeslání.",
         };
-    } catch {
+    } catch (error) {
+        logKontriError("workflow", "", error);
         return orderError(
-            "Příprava nebo ověření Kontri objednávek selhalo. Zkontrolujte náhled párování a historické reference; nový požadavek nebyl bezpečně připraven.",
+            "Příprava nebo ověření Kontri objednávek selhalo. Zkontrolujte diagnostické logy a historické reference; nový požadavek nebyl bezpečně připraven.",
         );
     }
 };

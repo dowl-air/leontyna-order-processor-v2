@@ -166,6 +166,28 @@ SMTP failure returns `info` with a delivery warning without undoing confirmation
 order. Delivery is best-effort: there is no email retry queue or historical shortage backfill,
 and concurrent successful processing is not guaranteed to produce exactly one notification.
 
+### Server Diagnostics
+
+Order submission and both SOAP order lookups emit structured `Kontri diagnostic` console records.
+Filter server logs by `reference` (the order ID for `lookup.orderId` events) and `event`.
+Submission logs include requested API IDs/quantities, HTTP status, actual API result code/message,
+and returned shortage quantities. Lookups include code/message, status, order ID, and article
+IDs/quantities. Missing messages are recorded as `[empty]`, not silently omitted.
+Workflow records distinguish preparation, retry, confirmed-order retry skips, rejection,
+reconciliation writes/no-writes, notification outcomes, and unchanged/persisted status checks.
+Exceptions include safe code/message fields rather than raw transport error objects.
+
+These records are available in the local server terminal or deployment runtime logs, not browser
+logs. Known environment credentials, authorization tokens, email addresses, and URLs are redacted;
+messages are limited to 2000 characters. Full JSON/XML payloads, headers, recipient addresses, and
+customer fields are not dumped. Logging does not add database writes, replay requests, or change
+API results. Log retention depends on the hosting platform; this is not a durable response archive
+and cannot recover responses from earlier runs.
+
+```sh
+npm test -- utils/kontriDiagnostics.test.ts actions/kontriDiagnostics.test.ts
+```
+
 On a timeout, uncertain response, or failed confirmation write, the reference and snapshot remain
 stored. Subsequent runs query Kontri by the same reference, including historical pending products.
 If lookup fails or does not return code `200`, they **retry the stored request with the same

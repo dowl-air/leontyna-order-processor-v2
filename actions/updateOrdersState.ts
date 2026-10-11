@@ -4,13 +4,17 @@ import ShopOrder from "@/types/ShopOrder";
 import { checkOrderByRefNumber } from "./checkOrderRefNumber";
 import { OrderStatus } from "@/types/api/CheckOrderResponse";
 import { updateProduct } from "@/db/updateProduct";
+import { logKontriError, logKontriEvent } from "@/utils/kontriDiagnostics";
 
 const updateProductGroupState = async (refNumber: string, products: ShopOrder[], baseStatus: OrderStatus) => {
     console.log("Checking product group state for refNumber:", refNumber, products.length);
     const status = await checkOrderByRefNumber(refNumber);
     if (Number(status?.Code) !== 200 || !status.Status || !Object.values(OrderStatus).includes(status.Status))
         throw new Error("Invalid Kontri status response.");
-    if (status.Status === baseStatus || status.Status === OrderStatus.NEW) return;
+    if (status.Status === baseStatus || status.Status === OrderStatus.NEW) {
+        logKontriEvent("status.unchanged", refNumber, { status: status.Status, products: products.length });
+        return;
+    }
 
     let newStatusCode: number;
 
@@ -37,6 +41,7 @@ const updateProductGroupState = async (refNumber: string, products: ShopOrder[],
         await updateProduct(product, { kontriStatusCode: newStatusCode });
     });
     await Promise.all(promises);
+    logKontriEvent("status.persisted", refNumber, { status: newStatusCode, products: products.length });
 };
 
 const updateOrdersState = async (getProducts: () => Promise<ShopOrder[]>, status: OrderStatus) => {
@@ -46,7 +51,8 @@ const updateOrdersState = async (getProducts: () => Promise<ShopOrder[]>, status
     let products: ShopOrder[];
     try {
         products = await getProducts();
-    } catch {
+    } catch (error) {
+        logKontriError("status.read", status, error);
         return { status: "error", message: "Kontri status products could not be read.", checkedCount, failedCount: 1 };
     }
 
@@ -70,12 +76,13 @@ const updateOrdersState = async (getProducts: () => Promise<ShopOrder[]>, status
         checkedCount++;
         try {
             await updateProductGroupState(refNumber, products, status);
-        } catch {
+        } catch (error) {
             failedCount++;
-            console.error("Kontri order status group check failed.");
+            logKontriError("status.group", refNumber, error);
         }
         index++;
     }
+    logKontriEvent("status.completed", status, { checkedCount, failedCount });
     return {
         status: failedCount ? "error" : "success",
         message: `Kontri status checks: ${checkedCount} groups checked, ${failedCount} failures.`,
