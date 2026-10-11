@@ -282,7 +282,10 @@ returns HTTP 401 without executing operations. An authorized run performs:
 3. Check ordered products with status `100` whose Shoptet order date is within the last five days (including the cutoff).
 4. Check both aggregated/completing states `300` and `301` within the same five-day window.
 
-Both status passes run even if an earlier operation returns an error or throws. The response
+Both status passes run even if an earlier operation returns an error or throws. The cron waits
+2.5 seconds after the new-order status pass before starting the aggregated-order status pass,
+including when the first pass fails or has no groups. This pause does not coordinate concurrent runs.
+The response
 contains `status`, `message`, and `results` with `feeds`, `sendOrders`, `newOrders`, and
 `aggregatedOrders`. Each result retains its operation status/message. Status-check results
 also include `checkedCount` (attempted reference groups) and `failedCount` (failed groups plus

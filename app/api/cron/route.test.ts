@@ -17,7 +17,25 @@ describe("cron result reporting", () => {
         mocks.newOrders.mockResolvedValue({ status: "success", message: "checked", checkedCount: 3, failedCount: 0 });
         mocks.aggregated.mockResolvedValue({ status: "success", message: "checked", checkedCount: 2, failedCount: 0 });
     });
-    afterEach(() => vi.unstubAllEnvs());
+    afterEach(() => {
+        vi.unstubAllEnvs();
+        vi.useRealTimers();
+    });
+
+    it.each(["success", "error", "thrown"])("waits between status categories after a %s first pass", async (outcome) => {
+        vi.useFakeTimers();
+        if (outcome === "error") mocks.newOrders.mockResolvedValue({ status: "error", message: "failed", checkedCount: 1 });
+        if (outcome === "thrown") mocks.newOrders.mockRejectedValue(new Error("failed"));
+        const pending = GET();
+        await vi.advanceTimersByTimeAsync(0);
+        expect(mocks.newOrders).toHaveBeenCalledOnce();
+        expect(mocks.aggregated).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(2499);
+        expect(mocks.aggregated).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(1);
+        expect(mocks.aggregated).toHaveBeenCalledOnce();
+        expect((await pending).status).toBe(outcome === "success" ? 200 : 500);
+    });
 
     it("returns all four actual results on success in workflow order", async () => {
         const response = await GET();

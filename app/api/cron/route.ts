@@ -29,6 +29,7 @@ export const GET = async () => {
             ? await runStep(sendOrders, "sendOrders")
             : { status: "skipped", message: "Order submission skipped because the import did not succeed." };
     const newOrders = await runStep(updateNewOrdersState, "newOrders");
+    await new Promise((resolve) => setTimeout(resolve, 2500));
     const aggregatedOrders = await runStep(updateAggregatedOrdersState, "aggregatedOrders");
     const results = { feeds, sendOrders: submission, newOrders, aggregatedOrders };
     const failed = feeds.status !== "success" || Object.values(results).some((result) => result.status === "error");
