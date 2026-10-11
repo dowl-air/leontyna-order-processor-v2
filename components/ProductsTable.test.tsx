@@ -63,6 +63,15 @@ describe("ProductsTable shortage certainty", () => {
         const html = renderToStaticMarkup(<ProductsTable initialShopOrders={[product, { ...product, code: "second", kontriApiId: "900" }]} />);
         expect(html.match(/aria-label="Zobrazit Kontri mapování AK-5-100"/g)).toHaveLength(2);
     });
+    it.each([0, undefined])("shows an EAN block alongside Neobjednáno and retains the mapping question button (status %s)", (kontriStatusCode) => {
+        vi.stubGlobal("React", React);
+        const blocked = { ...product, AltumOrderID: null, RefNumber: undefined, kontriStatusCode, kontriEanBlocked: true };
+        const html = renderToStaticMarkup(<ProductsTable initialShopOrders={[blocked]} />);
+        expect(html).toContain("Nesoulad EAN");
+        expect(html).toContain("Neobjednáno");
+        expect(html).toContain('aria-label="Zobrazit Kontri mapování AK-5-100"');
+        expect(html).not.toContain("Dotaz [Referenční číslo]");
+    });
 });
 
 describe("ProductsTable pagination", () => {

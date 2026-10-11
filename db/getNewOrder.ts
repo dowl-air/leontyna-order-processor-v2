@@ -9,6 +9,7 @@ import { v4 as uuidv4 } from "uuid";
 import { doc, getFirestore, runTransaction } from "firebase/firestore";
 import { readKontriMapping } from "./readKontriMapping";
 import { createKontriLookup, resolveKontriProduct } from "@/utils/resolveKontriProduct";
+import { blockKontriEanMismatch } from "@/actions/blockKontriEanMismatch";
 
 export const getNewOrder = async (): Promise<KontriOrder | null> => {
     const q = query(collection(db, "products"), where("AltumOrderID", "==", null));
@@ -16,23 +17,46 @@ export const getNewOrder = async (): Promise<KontriOrder | null> => {
 
     if (querySnapshot.empty) return null;
 
-    if (querySnapshot.docs.length > 450) throw new Error("Too many products for atomic Kontri preparation; manual review required.");
-    const products = querySnapshot.docs.map((document) => {
-        const data = document.data();
-        return { ...data, fID: document.id, date: formatToUTC(data.date as Timestamp) } as ShopOrder;
-    });
+    const products = querySnapshot.docs
+        .map((document) => {
+            const data = document.data();
+            return { ...data, fID: document.id, date: formatToUTC(data.date as Timestamp) } as ShopOrder;
+        })
+        .filter((product) => !product.kontriEanBlocked);
+    if (!products.length) return null;
+    if (products.length > 450) throw new Error("Too many products for atomic Kontri preparation; manual review required.");
     if (products.some((product) => product.RefNumber))
         throw new Error("Historical Kontri references require reconciliation before a new submission.");
     if (products.some((product) => product.kontriStatusCode !== undefined && product.kontriStatusCode !== 0))
         throw new Error("Only new Kontri products can be prepared.");
-    return prepareOrder(products, uuidv4().replace(/-/g, "").slice(0, 16), false);
+    const mapping = await readKontriMapping();
+    const lookup = createKontriLookup(mapping.records);
+    const eligible: ShopOrder[] = [];
+    for (const product of products) {
+        const resolution = resolveKontriProduct(product, lookup);
+        if (resolution.status === "blocked" && resolution.reason === "eanMismatch") {
+            const identifier = /^AK-[^-]+-([1-9]\d*)$/.exec(product.orderItemCode)![1];
+            const candidates = [...new Set([...(lookup.catalog.get(identifier) ?? []), ...(lookup.api.get(identifier) ?? [])])];
+            await blockKontriEanMismatch(product, candidates, mapping.version);
+        } else {
+            if (resolution.status !== "matched") throw new Error(`Blocked Kontri mapping: ${resolution.reason}.`);
+            eligible.push(product);
+        }
+    }
+    if (!eligible.length) return null;
+    return prepareOrder(eligible, uuidv4().replace(/-/g, "").slice(0, 16), false, mapping);
 };
 
 export const prepareKontriRetry = async (products: ShopOrder[], refNumber: string): Promise<KontriOrder> => {
     return prepareOrder(products, refNumber, true);
 };
 
-const prepareOrder = async (input: ShopOrder[], refNumber: string, retry: boolean): Promise<KontriOrder> => {
+const prepareOrder = async (
+    input: ShopOrder[],
+    refNumber: string,
+    retry: boolean,
+    activeMapping?: Awaited<ReturnType<typeof readKontriMapping>>,
+): Promise<KontriOrder> => {
     if (!input.length || input.length > 450 || !refNumber || refNumber.length > 16) throw new Error("Invalid Kontri preparation group.");
     const products = [...input].sort((first, second) => first.fID!.localeCompare(second.fID!));
     if (new Set(products.map((product) => product.fID)).size !== products.length || products.some((product) => !product.fID))
@@ -56,7 +80,7 @@ const prepareOrder = async (input: ShopOrder[], refNumber: string, retry: boolea
         if (JSON.stringify(payload.OrderedItems) !== JSON.stringify(expected.OrderedItems)) throw new Error("Kontri request items changed.");
         order = { ...payload, products: prepared };
     } else {
-        const mapping = await readKontriMapping();
+        const mapping = activeMapping ?? (await readKontriMapping());
         const lookup = createKontriLookup(mapping.records);
         prepared = products.map((product) => {
             const resolution = resolveKontriProduct(product, lookup);
@@ -84,6 +108,7 @@ const prepareOrder = async (input: ShopOrder[], refNumber: string, retry: boolea
             if (
                 !snapshot.exists() ||
                 !current ||
+                !!current.kontriEanBlocked ||
                 (retry ? current?.AltumOrderID !== null && current?.AltumOrderID !== refNumber : current?.AltumOrderID !== null) ||
                 (retry ? current.RefNumber !== refNumber : !!current.RefNumber) ||
                 (retry

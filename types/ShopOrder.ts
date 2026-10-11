@@ -20,6 +20,7 @@ type ShopOrder = {
     fID?: string;
     kontriApiId?: string;
     kontriMappingVersion?: string;
+    kontriEanBlocked?: boolean;
     kontriOrderedAmount?: number;
     kontriRequestJson?: string;
     kontriRequestProductIds?: string[];

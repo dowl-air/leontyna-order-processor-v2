@@ -157,11 +157,32 @@ Run the resolver and cache reader tests with:
 npm test -- utils/resolveKontriProduct.test.ts db/readKontriMapping.test.ts
 ```
 
-New orders resolve all pending products against one validated active cache before submission.
-A missing cache, blocked match, non-new product status, invalid quantity,
+New orders skip products with `kontriEanBlocked: true` and resolve the remaining pending
+products against one validated active cache before submission. An `eanMismatch` resolution
+persists that flag on the individual product and excludes it from the new request, including
+its saved request membership. Other eligible products continue; if none remain, no order is sent.
+The product's status, original code/EAN, `AltumOrderID`, and reference are not changed by blocking.
+The UI shows "Nesoulad EAN" beside "Neobjednáno"; details remain available through the question button.
+
+After saving each new block, the application logs it and attempts one email to the existing
+`SITE_MAIL_RECIEVER`, including the order/product code, source EAN, candidate Kontri IDs/EANs,
+and mapping version. Subsequent runs skip that product without remapping or sending another email.
+SMTP failure is logged and does not undo the block or stop other eligible products; email is not
+retried. A failed block write stops preparation. There is no automatic unblocking, manual-unblock
+button, or notification queue; resolution and ordering are manual. This assumes a single cron run.
+Existing saved requests are not filtered or remapped; historical preparation retains its existing rules.
+
+A missing cache, any other blocked match, non-new product status, invalid quantity,
 or group larger than 450 products prevents preparation of the entire group. Original Shoptet
 codes and Firestore document IDs remain unchanged. API IDs must fit a positive 32-bit integer;
 references must not exceed the documented 16 characters.
+
+Focused EAN-block checks:
+
+```sh
+npm test -- db/getNewOrder.test.ts -t 'EAN|mismatch|blocked product|failed notification'
+npm test -- components/ProductsTable.test.tsx -t 'EAN block'
+```
 
 Before the first POST, a Firestore transaction rechecks each product and persists:
 

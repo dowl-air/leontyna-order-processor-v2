@@ -1,6 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ getDocs: vi.fn(), get: vi.fn(), update: vi.fn(), transaction: vi.fn(), mapping: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+    getDocs: vi.fn(),
+    get: vi.fn(),
+    update: vi.fn(),
+    transaction: vi.fn(),
+    mapping: vi.fn(),
+    block: vi.fn(),
+    mail: vi.fn(),
+    event: vi.fn(),
+    error: vi.fn(),
+}));
+vi.mock("./updateProduct", () => ({ updateProduct: mocks.block }));
+vi.mock("@/actions/sendMail", () => ({ sendMail: mocks.mail }));
+vi.mock("@/utils/kontriDiagnostics", () => ({ logKontriEvent: mocks.event, logKontriError: mocks.error }));
 vi.mock("./init", () => ({ db: { app: {} } }));
 vi.mock("firebase/firestore/lite", () => ({
     collection: (...parts: unknown[]) => parts,
@@ -24,6 +37,7 @@ const document = (data = product) => ({ id: "original-document", data: () => dat
 describe("getNewOrder preparation", () => {
     beforeEach(() => {
         vi.resetAllMocks();
+        mocks.mail.mockResolvedValue({ messageId: "sent" });
         mocks.getDocs.mockResolvedValue({ empty: false, docs: [document()] });
         mocks.mapping.mockResolvedValue({ version: "mapping-version", records: [{ catalogId: "100", apiId: "900", ean: "00123" }] });
         mocks.get.mockResolvedValue({ exists: () => true, data: () => product });
@@ -52,6 +66,87 @@ describe("getNewOrder preparation", () => {
         mocks.getDocs.mockResolvedValue({ empty: true, docs: [] });
         expect(await getNewOrder()).toBeNull();
         expect(mocks.mapping).not.toHaveBeenCalled();
+    });
+    it("blocks only the EAN mismatch, emails it and prepares the remaining products", async () => {
+        const mismatch = { ...product, code: "bad-order", orderItemEan: "00456" };
+        mocks.getDocs.mockResolvedValue({ empty: false, docs: [document(), { id: "bad-document", data: () => mismatch }] });
+        const order = await getNewOrder();
+        expect(order?.products.map((item) => item.fID)).toEqual(["original-document"]);
+        expect(order?.OrderedItems).toEqual([{ AltumArticleId: 900, Amount: 2, ClientOrderNumber: "order" }]);
+        expect(mocks.block).toHaveBeenCalledWith(expect.objectContaining({ fID: "bad-document" }), { kontriEanBlocked: true });
+        expect(mocks.mail).toHaveBeenCalledOnce();
+        expect(mocks.mail.mock.calls[0][0].text).toContain("bad-order");
+        expect(mocks.mail.mock.calls[0][0].text).toContain("00456");
+        expect(mocks.mail.mock.calls[0][0].text).toContain("00123");
+        expect(mocks.mapping).toHaveBeenCalledOnce();
+        expect(mocks.update).toHaveBeenCalledTimes(1);
+        expect(mocks.event).toHaveBeenCalledWith(
+            "mapping.eanBlocked",
+            "",
+            expect.objectContaining({ productId: "bad-document", sourceEan: "00456" }),
+        );
+        const fields = mocks.update.mock.calls[0][1];
+        expect(JSON.parse(fields.kontriRequestJson).OrderedItems).toEqual(order?.OrderedItems);
+        expect(fields.kontriRequestProductIds).toEqual(["original-document"]);
+    });
+    it("returns no request when all products are newly EAN-blocked and skips them next run", async () => {
+        const mismatch = { ...product, orderItemEan: "00456" };
+        mocks.getDocs.mockResolvedValue({ empty: false, docs: [document(mismatch)] });
+        expect(await getNewOrder()).toBeNull();
+        expect(mocks.mail).toHaveBeenCalledOnce();
+        expect(mocks.transaction).not.toHaveBeenCalled();
+        mocks.getDocs.mockResolvedValue({ empty: false, docs: [document({ ...mismatch, kontriEanBlocked: true } as typeof product)] });
+        mocks.mapping.mockClear();
+        expect(await getNewOrder()).toBeNull();
+        expect(mocks.mail).toHaveBeenCalledOnce();
+        expect(mocks.block).toHaveBeenCalledOnce();
+        expect(mocks.mapping).not.toHaveBeenCalled();
+    });
+    it("continues with eligible products after the mismatch notification fails", async () => {
+        mocks.getDocs.mockResolvedValue({
+            empty: false,
+            docs: [document(), { id: "bad-document", data: () => ({ ...product, orderItemEan: "00456" }) }],
+        });
+        mocks.mail.mockRejectedValue(new Error("SMTP failure"));
+        expect((await getNewOrder())?.products).toHaveLength(1);
+        expect(mocks.block).toHaveBeenCalledOnce();
+        expect(mocks.error).toHaveBeenCalledWith("mapping.notification", "", expect.any(Error));
+    });
+    it("skips previously blocked products while preparing other new products", async () => {
+        mocks.getDocs.mockResolvedValue({
+            empty: false,
+            docs: [document(), { id: "blocked", data: () => ({ ...product, kontriEanBlocked: true, orderItemEan: "00456" }) }],
+        });
+        expect((await getNewOrder())?.products.map((item) => item.fID)).toEqual(["original-document"]);
+        expect(mocks.block).not.toHaveBeenCalled();
+        expect(mocks.mail).not.toHaveBeenCalled();
+    });
+    it("sends one email for each newly blocked product", async () => {
+        const mismatch = { ...product, orderItemEan: "00456" };
+        mocks.getDocs.mockResolvedValue({
+            empty: false,
+            docs: [document(mismatch), { id: "second", data: () => ({ ...mismatch, code: "second-order" }) }],
+        });
+        expect(await getNewOrder()).toBeNull();
+        expect(mocks.block).toHaveBeenCalledTimes(2);
+        expect(mocks.mail).toHaveBeenCalledTimes(2);
+    });
+    it("does not repeat a failed notification after persisting the block", async () => {
+        const mismatch = { ...product, orderItemEan: "00456" };
+        mocks.getDocs.mockResolvedValue({ empty: false, docs: [document(mismatch)] });
+        mocks.mail.mockResolvedValue(undefined);
+        expect(await getNewOrder()).toBeNull();
+        expect(mocks.event).toHaveBeenCalledWith("mapping.notification.failed", "", expect.anything());
+        mocks.getDocs.mockResolvedValue({ empty: false, docs: [document({ ...mismatch, kontriEanBlocked: true } as typeof product)] });
+        expect(await getNewOrder()).toBeNull();
+        expect(mocks.mail).toHaveBeenCalledOnce();
+    });
+    it("does not email or prepare if saving the EAN block fails", async () => {
+        mocks.getDocs.mockResolvedValue({ empty: false, docs: [document({ ...product, orderItemEan: "00456" })] });
+        mocks.block.mockRejectedValue(new Error("write failed"));
+        await expect(getNewOrder()).rejects.toThrow("write failed");
+        expect(mocks.mail).not.toHaveBeenCalled();
+        expect(mocks.transaction).not.toHaveBeenCalled();
     });
     it("does not persist anything when mapping is blocked", async () => {
         mocks.mapping.mockResolvedValue({ version: "version", records: [] });

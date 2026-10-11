@@ -293,19 +293,24 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
                                         {order.kontriReconciliationRequired ? "Neznámé" : order.shortage}
                                     </td>
                                     <td className="text-center">
-                                        {order.kontriStatusCode !== undefined ? (
+                                        {order.kontriStatusCode !== undefined || order.kontriEanBlocked ? (
                                             <div className="flex flex-col gap-1 items-center">
-                                                {order.kontriStatusCode === 0 ? <div className="badge badge-error">Neobjednáno</div> : null}
+                                                {order.kontriStatusCode === 0 || (order.kontriEanBlocked && order.kontriStatusCode === undefined) ? (
+                                                    <div className="badge badge-error">Neobjednáno</div>
+                                                ) : null}
+                                                {order.kontriEanBlocked ? (
+                                                    <div className="badge badge-warning whitespace-normal h-auto min-h-5">Nesoulad EAN</div>
+                                                ) : null}
                                                 {order.kontriStatusCode === 80 ? (
                                                     <div className="badge badge-error">{order.kontriStatusName}</div>
                                                 ) : null}
                                                 {order.kontriStatusCode === 90 ? (
                                                     <div className="badge badge-warning">{order.kontriStatusName}</div>
                                                 ) : null}
-                                                {[100, 300, 301, 400].includes(order.kontriStatusCode) ? (
+                                                {order.kontriStatusCode !== undefined && [100, 300, 301, 400].includes(order.kontriStatusCode) ? (
                                                     <div className="badge badge-success">{order.kontriStatusName}</div>
                                                 ) : null}
-                                                {[300, 400].includes(order.kontriStatusCode) ? (
+                                                {order.kontriStatusCode !== undefined && [300, 400].includes(order.kontriStatusCode) ? (
                                                     <div className="badge badge-accent text-nowrap">Agregováno sem</div>
                                                 ) : null}
                                                 {order.kontriStatusCode === 301 ? <div className="badge badge-warning">Přesunuto</div> : null}
