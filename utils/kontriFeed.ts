@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { XMLParser, XMLValidator } from "fast-xml-parser";
+import { formatKontriError } from "./kontriDiagnostics";
 
 export type KontriMappingRecord = { catalogId: string; apiId: string; ean: string };
 export type KontriMappingVersion = {
@@ -105,10 +106,12 @@ export async function refreshKontriMapping(xml: string, store: KontriMappingStor
         rejected = !(await store.publish(metadata));
     }
     let cleanupFailed = false;
+    let cleanupError = "";
     try {
         await store.cleanup();
-    } catch {
+    } catch (error) {
         cleanupFailed = true;
+        cleanupError = formatKontriError(error);
     }
-    return { hash, recordCount: records.length, unchanged, rejected, cleanupFailed };
+    return { hash, recordCount: records.length, unchanged, rejected, cleanupFailed, cleanupError };
 }

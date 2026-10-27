@@ -16,8 +16,10 @@ describe("downloadKontriFeed", () => {
         vi.stubEnv("KONTRI_FEED_PASSWORD", "test-password");
         mocks.refresh.mockReset();
         mocks.mail.mockReset().mockResolvedValue({ messageId: "test" });
+        vi.spyOn(console, "error").mockImplementation(() => {});
     });
     afterEach(() => {
+        vi.restoreAllMocks();
         vi.unstubAllEnvs();
         vi.unstubAllGlobals();
     });
@@ -34,7 +36,7 @@ describe("downloadKontriFeed", () => {
         vi.stubGlobal("fetch", fetchMock);
         mocks.refresh.mockResolvedValue({ unchanged: false, recordCount: 3 });
         expect((await downloadKontriFeed()).status).toBe("success");
-        expect(fetchMock.mock.calls[0][0]).toBe("https://xml.kontri.pl/mobilhit/");
+        expect(fetchMock.mock.calls[0][0]).toBe("https://xml.kontri.pl/mobilhit/MobilHit_Products_3.0.xml");
         expect(fetchMock.mock.calls[0][1]).toMatchObject({
             cache: "no-store",
             redirect: "error",
@@ -60,8 +62,38 @@ describe("downloadKontriFeed", () => {
     it("reports validation or database failure", async () => {
         vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("invalid")));
         mocks.refresh.mockRejectedValue(new Error("invalid feed"));
-        expect((await downloadKontriFeed()).status).toBe("error");
+        const result = await downloadKontriFeed();
+        expect(result.status).toBe("error");
+        expect(result.message).toContain("invalid feed");
+        expect(result.message).toContain("Ověření a uložení");
         expect(mocks.mail).toHaveBeenCalledOnce();
+        expect(mocks.mail).toHaveBeenCalledWith(expect.objectContaining({ text: expect.stringContaining("invalid feed") }));
+        expect(console.error).toHaveBeenCalledWith(
+            "Kontri diagnostic",
+            expect.objectContaining({
+                event: "feed.error",
+                reference: "Ověření a uložení",
+                message: expect.stringContaining("invalid feed"),
+            }),
+        );
+    });
+    it("reports the underlying network cause without exposing feed credentials or payloads", async () => {
+        const encoded = Buffer.from("test-login:test-password").toString("base64");
+        const error = Object.assign(new TypeError("fetch failed"), {
+            cause: Object.assign(new Error(`connection refused ${encoded} test-password <html>private body</html>`), { code: "ECONNREFUSED" }),
+            headers: { Authorization: encoded },
+        });
+        vi.stubGlobal("fetch", vi.fn().mockRejectedValue(error));
+        const result = await downloadKontriFeed();
+        expect(result.message).toContain("fetch failed");
+        expect(result.message).toContain("ECONNREFUSED");
+        expect(result.message).toContain("Stažení");
+        const output = JSON.stringify([result, mocks.mail.mock.calls, vi.mocked(console.error).mock.calls]);
+        expect(output).not.toContain(encoded);
+        expect(output).not.toContain("test-password");
+        expect(output).not.toContain("test-login");
+        expect(output).not.toContain("private body");
+        expect(mocks.mail).toHaveBeenCalledWith(expect.objectContaining({ text: expect.stringContaining("ECONNREFUSED") }));
     });
     it("reports and emails the rejected record count drop", async () => {
         vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("<ROOT/>")));
@@ -91,9 +123,15 @@ describe("downloadKontriFeed", () => {
     });
     it("notifies about cleanup failure without reporting publication as failed", async () => {
         vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("<ROOT/>")));
-        mocks.refresh.mockResolvedValue({ unchanged: false, recordCount: 3, cleanupFailed: true });
+        mocks.refresh.mockResolvedValue({
+            unchanged: false,
+            recordCount: 3,
+            cleanupFailed: true,
+            cleanupError: "permission-denied: Missing permissions",
+        });
         expect((await downloadKontriFeed()).status).toBe("success");
         expect(mocks.mail).toHaveBeenCalledWith(expect.objectContaining({ text: expect.stringContaining("Úklid") }));
+        expect(mocks.mail).toHaveBeenCalledWith(expect.objectContaining({ text: expect.stringContaining("permission-denied") }));
     });
     it.each(["reject", "undefined"])("preserves the original error when notification fails: %s", async (failure) => {
         vi.stubEnv("KONTRI_FEED_PASSWORD", "");

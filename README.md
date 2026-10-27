@@ -86,9 +86,10 @@ Set `KONTRI_FEED_LOGIN` and `KONTRI_FEED_PASSWORD` in the server environment, lo
 These are XML feed credentials, not order API credentials. Do not commit their values.
 
 The **Vynutit stažení Kontri feedu** button downloads
-`https://xml.kontri.pl/mobilhit/` and validates every variant's
+`https://xml.kontri.pl/mobilhit/MobilHit_Products_3.0.xml` and validates every variant's
 `id_instancji`, `id_instancji_api`, and `kod_kreskowy`. Identifiers and EANs remain strings.
 Empty, malformed, incomplete, or duplicate mappings are rejected.
+Use the direct XML file URL; `https://xml.kontri.pl/mobilhit/` returns an HTML directory listing, not a feed.
 Updates are also rejected if the variant count drops by more than 25% compared with the active
 mapping. Exactly a 25% drop is allowed; the first import has no previous count to compare.
 The count is checked before storage and again against the active version inside the publication
@@ -113,8 +114,12 @@ Cleanup errors are reported separately and do not invalidate a published mapping
 
 Kontri feed failures (missing credentials, HTTP/network errors, validation or storage failures)
 and cleanup failures send an email to `SITE_MAIL_RECIEVER` using the existing SMTP configuration.
-Notifications contain a safe description, operation phase, and UTC timestamp, never credentials,
-raw exceptions, or XML contents. If email delivery fails, the UI reports that failure alongside
+Notifications contain a sanitized error name, code and message (when available), up to two nested
+causes, operation phase, and UTC timestamp. The UI shows the same error detail, and the server
+logs it through the shared Kontri diagnostics, including cleanup failures. Credentials (including
+encoded feed authentication), URLs, email addresses, and embedded XML/JSON content are redacted;
+raw exceptions, headers, response objects, and stack traces are not logged or emailed.
+If email delivery fails, the UI reports that failure alongside
 the original result. Successful updates without cleanup errors do not send email.
 
 This button does not import Shoptet orders or submit orders. The same cache update also runs

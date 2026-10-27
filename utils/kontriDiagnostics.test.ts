@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { logKontriResponse, logKontriError } from "./kontriDiagnostics";
+import { formatKontriError, logKontriResponse, logKontriError } from "./kontriDiagnostics";
 
 describe("Kontri diagnostics", () => {
     afterEach(() => {
@@ -42,5 +42,30 @@ describe("Kontri diagnostics", () => {
             expect.objectContaining({ event: "lookup.error", reference: "reference", errorCode: "ECONNRESET", message: "Failure" }),
         );
         expect(JSON.stringify(log.mock.calls)).not.toContain("private");
+    });
+    it("formats error causes and redacts feed authentication, URLs, emails and response content", () => {
+        vi.stubEnv("KONTRI_FEED_LOGIN", "feed-login");
+        vi.stubEnv("KONTRI_FEED_PASSWORD", "feed-password");
+        const encoded = Buffer.from("feed-login:feed-password").toString("base64");
+        const error = Object.assign(new TypeError(`fetch failed ${encoded} feed-password feed-login https://host/ person@example.com`), {
+            cause: Object.assign(new Error("redirect count exceeded <html>private response</html>"), { code: "NETWORK_ERROR" }),
+            response: "private response",
+        });
+        const result = formatKontriError(error);
+        expect(result).toContain("TypeError: fetch failed");
+        expect(result).toContain("NETWORK_ERROR: redirect count exceeded");
+        for (const secret of [encoded, "feed-password", "feed-login", "https://host/", "person@example.com", "private response"])
+            expect(result).not.toContain(secret);
+        expect(formatKontriError(new Error('Bad response {"private":"payload"}'))).not.toContain("payload");
+    });
+    it("handles timeouts, missing errors and bounded cyclic causes", () => {
+        expect(formatKontriError(new DOMException("The operation timed out", "TimeoutError"))).toContain("TimeoutError: The operation timed out");
+        expect(formatKontriError(undefined)).toBe("Unknown error");
+        expect(formatKontriError({})).toBe("Unknown error");
+        expect(formatKontriError("failure")).toBe("failure");
+        const cyclic = Object.assign(new Error("cycle"), { cause: {} });
+        cyclic.cause = cyclic;
+        expect(formatKontriError(cyclic).match(/cycle/g)).toHaveLength(3);
+        expect(formatKontriError(new Error("failure".repeat(1000))).length).toBeLessThanOrEqual(2000);
     });
 });

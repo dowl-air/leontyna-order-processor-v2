@@ -2,9 +2,11 @@
 
 import { kontriMappingStore } from "@/db/kontriMapping";
 import { KontriFeedDropError, refreshKontriMapping } from "@/utils/kontriFeed";
+import { formatKontriError, logKontriError } from "@/utils/kontriDiagnostics";
 import { sendMail } from "./sendMail";
 
 async function notifyFeedError(message: string, phase: string) {
+    logKontriError("feed", phase, { message });
     try {
         const result = await sendMail({
             subject: `[Kontri feed] ${phase}`,
@@ -27,7 +29,7 @@ export async function downloadKontriFeed() {
     if (!login || !password) return feedError("Chybí přihlašovací údaje ke Kontri feedu.", "Konfigurace");
     let phase = "Stažení";
     try {
-        const response = await fetch("https://xml.kontri.pl/mobilhit/", {
+        const response = await fetch("https://xml.kontri.pl/mobilhit/MobilHit_Products_3.0.xml", {
             headers: { Authorization: `Basic ${Buffer.from(`${login}:${password}`).toString("base64")}` },
             cache: "no-store",
             redirect: "error",
@@ -38,7 +40,7 @@ export async function downloadKontriFeed() {
         phase = "Ověření a uložení";
         if (Buffer.byteLength(xml) > 25 * 1024 * 1024) throw new Error("Feed exceeds size limit.");
         const result = await refreshKontriMapping(xml, kontriMappingStore);
-        const cleanupMessage = "Úklid starých verzí selhal; mapování je dostupné.";
+        const cleanupMessage = `Úklid starých verzí selhal; mapování je dostupné.${result.cleanupError ? ` Chyba: ${result.cleanupError}` : ""}`;
         const notificationMessage = result.cleanupFailed ? await notifyFeedError(cleanupMessage, "Úklid") : "";
         const message = result.rejected
             ? "Stažené Kontri mapování nebylo aktivováno: publikace byla odmítnuta kvůli shodné nebo novější aktivní verzi. Aktivní mapování nebylo tímto během změněno."
@@ -54,6 +56,9 @@ export async function downloadKontriFeed() {
                 "Kontrola počtu variant",
             );
         }
-        return feedError("Stažení, ověření nebo uložení Kontri feedu selhalo. Původní mapování zůstává zachované.", phase);
+        return feedError(
+            `Stažení, ověření nebo uložení Kontri feedu selhalo. Původní mapování zůstává zachované. Fáze: ${phase}. Chyba: ${formatKontriError(error)}`,
+            phase,
+        );
     }
 }

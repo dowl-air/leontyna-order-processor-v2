@@ -6,6 +6,8 @@ function safeText(value: unknown): string {
         .map(([, secret]) => secret!);
     if (process.env.KONTRI_API_USER && process.env.KONTRI_API_PASSWORD)
         secrets.push(Buffer.from(`${process.env.KONTRI_API_USER}:${process.env.KONTRI_API_PASSWORD}`).toString("base64"));
+    if (process.env.KONTRI_FEED_LOGIN && process.env.KONTRI_FEED_PASSWORD)
+        secrets.push(Buffer.from(`${process.env.KONTRI_FEED_LOGIN}:${process.env.KONTRI_FEED_PASSWORD}`).toString("base64"));
     for (const secret of secrets.sort((first, second) => second.length - first.length)) text = text.split(secret).join("[redacted]");
     return (
         text
@@ -19,6 +21,27 @@ function safeText(value: unknown): string {
 
 function object(value: unknown): Record<string, unknown> {
     return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+}
+
+export function formatKontriError(error: unknown): string {
+    const summaries: string[] = [];
+    let current = error;
+    for (let depth = 0; depth < 3 && current != null; depth++) {
+        const details = object(current);
+        const message = typeof current === "string" ? current : details.message;
+        summaries.push(
+            [
+                details.name,
+                details.code,
+                typeof message === "string" ? message.replace(/<[^>]+>[\s\S]*|[{\[][\s\S]*/g, "[content omitted]") : "Unknown error",
+            ]
+                .filter((value) => typeof value === "string" && value.length > 0)
+                .map(safeText)
+                .join(": "),
+        );
+        current = details.cause;
+    }
+    return summaries.join("; cause: ").slice(0, 2000) || "Unknown error";
 }
 
 function quantities(value: unknown): unknown {

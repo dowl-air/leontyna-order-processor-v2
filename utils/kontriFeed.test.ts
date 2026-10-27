@@ -71,5 +71,6 @@ describe("Kontri feed", () => {
             cleanup: vi.fn().mockRejectedValue(new Error("cleanup")),
         });
         expect(result.cleanupFailed).toBe(true);
+        expect(result.cleanupError).toBe("Error: cleanup");
     });
 });
