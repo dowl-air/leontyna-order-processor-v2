@@ -86,7 +86,7 @@ Set `KONTRI_FEED_LOGIN` and `KONTRI_FEED_PASSWORD` in the server environment, lo
 These are XML feed credentials, not order API credentials. Do not commit their values.
 
 The **Vynutit stažení Kontri feedu** button downloads
-`https://xml.kontri.pl/HBIZ_VIVI/MobilHit_Products_3.0.xml` and validates every variant's
+`https://xml.kontri.pl/mobilhit/` and validates every variant's
 `id_instancji`, `id_instancji_api`, and `kod_kreskowy`. Identifiers and EANs remain strings.
 Empty, malformed, incomplete, or duplicate mappings are rejected.
 Updates are also rejected if the variant count drops by more than 25% compared with the active

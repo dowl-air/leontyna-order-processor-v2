@@ -27,7 +27,7 @@ export async function downloadKontriFeed() {
     if (!login || !password) return feedError("Chybí přihlašovací údaje ke Kontri feedu.", "Konfigurace");
     let phase = "Stažení";
     try {
-        const response = await fetch("https://xml.kontri.pl/HBIZ_VIVI/MobilHit_Products_3.0.xml", {
+        const response = await fetch("https://xml.kontri.pl/mobilhit/", {
             headers: { Authorization: `Basic ${Buffer.from(`${login}:${password}`).toString("base64")}` },
             cache: "no-store",
             redirect: "error",

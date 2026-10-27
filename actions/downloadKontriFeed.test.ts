@@ -34,6 +34,7 @@ describe("downloadKontriFeed", () => {
         vi.stubGlobal("fetch", fetchMock);
         mocks.refresh.mockResolvedValue({ unchanged: false, recordCount: 3 });
         expect((await downloadKontriFeed()).status).toBe("success");
+        expect(fetchMock.mock.calls[0][0]).toBe("https://xml.kontri.pl/mobilhit/");
         expect(fetchMock.mock.calls[0][1]).toMatchObject({
             cache: "no-store",
             redirect: "error",
