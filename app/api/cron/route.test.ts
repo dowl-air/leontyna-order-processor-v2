@@ -10,6 +10,8 @@ import { GET } from "./route";
 describe("cron result reporting", () => {
     beforeEach(() => {
         vi.resetAllMocks();
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date("2026-07-01T07:05:00Z"));
         vi.stubEnv("CRON_SECRET", "test-secret");
         mocks.auth.mockReturnValue("Bearer test-secret");
         mocks.feeds.mockResolvedValue({ status: "success", message: "imported" });
@@ -22,19 +24,32 @@ describe("cron result reporting", () => {
         vi.useRealTimers();
     });
 
-    it.each(["success", "error", "thrown"])("waits between status categories after a %s first pass", async (outcome) => {
-        vi.useFakeTimers();
-        if (outcome === "error") mocks.newOrders.mockResolvedValue({ status: "error", message: "failed", checkedCount: 1 });
-        if (outcome === "thrown") mocks.newOrders.mockRejectedValue(new Error("failed"));
+    it("runs status passes back to back without a fixed pause", async () => {
+        mocks.newOrders.mockRejectedValue(new Error("failed"));
         const pending = GET();
         await vi.advanceTimersByTimeAsync(0);
-        expect(mocks.newOrders).toHaveBeenCalledOnce();
-        expect(mocks.aggregated).not.toHaveBeenCalled();
-        await vi.advanceTimersByTimeAsync(2499);
-        expect(mocks.aggregated).not.toHaveBeenCalled();
-        await vi.advanceTimersByTimeAsync(1);
         expect(mocks.aggregated).toHaveBeenCalledOnce();
-        expect((await pending).status).toBe(outcome === "success" ? 200 : 500);
+        expect((await pending).status).toBe(500);
+    });
+
+    it.each([
+        ["2026-07-01T08:15:00Z", false, false],
+        ["2026-07-01T08:32:00Z", true, false],
+        ["2026-07-01T07:05:00Z", true, true],
+        ["2026-12-01T08:09:00Z", true, true],
+        ["2026-12-01T08:10:00Z", false, false],
+    ])("plans the run at %s (checks %s, full sweep %s)", async (time, checks, fullSweep) => {
+        vi.setSystemTime(new Date(time));
+        const response = await GET();
+        const body = await response.json();
+        expect(response.status).toBe(200);
+        expect(body.plan).toEqual({ checks, fullSweep });
+        expect(mocks.send).toHaveBeenCalledWith({ checkUnconfirmed: checks });
+        if (checks) expect(mocks.newOrders).toHaveBeenCalledWith({ fullSweep });
+        else expect(body.results.newOrders.status).toBe("skipped");
+        expect(mocks.newOrders).toHaveBeenCalledTimes(checks ? 1 : 0);
+        expect(mocks.aggregated).toHaveBeenCalledTimes(fullSweep ? 1 : 0);
+        if (!fullSweep) expect(body.results.aggregatedOrders.status).toBe("skipped");
     });
 
     it("returns all four actual results on success in workflow order", async () => {

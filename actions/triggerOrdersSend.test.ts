@@ -287,6 +287,16 @@ describe("sendOrders with persisted mapping", () => {
         expect(mocks.update).toHaveBeenCalledWith(products[0], expect.objectContaining({ kontriStatusCode: 110 }));
         expect(mocks.mail).toHaveBeenCalledOnce();
     });
+    it("submits new products without reading or checking unconfirmed orders outside their slot", async () => {
+        mocks.pending.mockResolvedValue([{ RefNumber: "stable", products }]);
+        const result = sendOrders({ checkUnconfirmed: false });
+        await vi.runAllTimersAsync();
+        expect((await result).message).toContain("byla potvrzena (123)");
+        expect(mocks.pending).not.toHaveBeenCalled();
+        expect(mocks.check).not.toHaveBeenCalled();
+        expect(mocks.service).not.toHaveBeenCalled();
+        expect(mocks.send).toHaveBeenCalledOnce();
+    });
     it("records a failed retry and still submits new products when the Kontri service responds", async () => {
         const other = products.map((product) => ({ ...product, RefNumber: "other" }));
         mocks.pending.mockResolvedValue([

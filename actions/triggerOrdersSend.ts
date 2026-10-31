@@ -189,17 +189,17 @@ const sendOrderHandler = async (orderObject: KontriOrder): Promise<HandlerResult
     }
 };
 
-export const sendOrders = async () => {
+// Request spacing is enforced at the Kontri boundary; the cron checks unconfirmed orders only in its 30-minute slots.
+export const sendOrders = async ({ checkUnconfirmed = true }: { checkUnconfirmed?: boolean } = {}) => {
     try {
         const messages: string[] = [];
         let retried = false;
         let requiresReviewOrWaiting = false;
         let failed = false;
         let retryFailed = false;
-        const uncertainOrders = await getUnconfirmedOrders();
-        logKontriEvent("workflow.pending", "", { groups: uncertainOrders.length });
+        const uncertainOrders = checkUnconfirmed ? await getUnconfirmedOrders() : [];
+        logKontriEvent("workflow.pending", "", { groups: uncertainOrders.length, checked: checkUnconfirmed });
         for (const order of uncertainOrders) {
-            await new Promise((resolve) => setTimeout(resolve, 2100));
             const response = await checkOrderByRefNumber(order.RefNumber).catch((error) => {
                 logKontriError("workflow.lookup", order.RefNumber, error);
                 return null;
@@ -213,7 +213,6 @@ export const sendOrders = async () => {
                 }
                 const retry = await prepareKontriRetry(order.products, order.RefNumber);
                 logKontriEvent("retry.prepared", order.RefNumber, { products: retry.products.length });
-                await new Promise((resolve) => setTimeout(resolve, 2100));
                 const result = await sendOrderHandler(retry);
                 if (result.retryableCode !== undefined) {
                     failed = true;
@@ -282,7 +281,6 @@ export const sendOrders = async () => {
             }
         }
         if (retryFailed) {
-            await new Promise((resolve) => setTimeout(resolve, 2100));
             if (!(await kontriServiceAvailable())) {
                 logKontriEvent("workflow.blocked", "", { reason: "serviceUnavailable" });
                 messages.push("Kontri neodpovědělo na kontrolu stavu služby; nové produkty nebyly odeslány.");
@@ -292,7 +290,6 @@ export const sendOrders = async () => {
         const order = await getNewOrder();
         logKontriEvent("workflow.prepared", order?.RefNumber ?? "", { products: order?.products.length ?? 0 });
         if (order) {
-            await new Promise((resolve) => setTimeout(resolve, 2100));
             const handled = await sendOrderHandler(order);
             const { retryableCode, ...result } =
                 handled.retryableCode !== undefined ? { ...handled, message: handled.message + (await notifyOrderProblem(handled.message)) } : handled;

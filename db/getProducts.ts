@@ -16,7 +16,7 @@ import {
 import { db } from "./init";
 import ShopOrder from "@/types/ShopOrder";
 import { formatToUTC } from "@/utils/formatDate";
-import { getOrderHistoryCutoff } from "@/utils/orderHistory";
+import { getStatusHistoryCutoff } from "@/utils/orderHistory";
 
 export const getProducts = async (limit: number, startIndex: Date | null): Promise<ShopOrder[]> => {
     let q = query(collection(db, "products"), orderBy("date", "desc"), flimit(limit), startAfter(startIndex));
@@ -50,7 +50,7 @@ const getUnfinishedProducts = async (...baseConstraints: QueryConstraint[]): Pro
 };
 
 export const getOrderedProducts = async (): Promise<ShopOrder[]> => {
-    const cutoff = getOrderHistoryCutoff();
+    const cutoff = getStatusHistoryCutoff();
     return getUnfinishedProducts(
         where("kontriStatusCode", "==", 100),
         where("date", ">=", cutoff),
@@ -62,7 +62,7 @@ export const getOrderedProducts = async (): Promise<ShopOrder[]> => {
 export const getNotSentProducts = async (): Promise<ShopOrder[]> => {
     return getUnfinishedProducts(
         where("kontriStatusCode", "in", [300, 301]),
-        where("date", ">=", getOrderHistoryCutoff()),
+        where("date", ">=", getStatusHistoryCutoff()),
         orderBy("date", "asc"),
         orderBy(documentId(), "asc"),
     );

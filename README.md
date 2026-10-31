@@ -25,10 +25,10 @@ This project uses [`next/font`](https://nextjs.org/docs/basic-features/font-opti
 
 ## Order History Window
 
-Retrospective order checks use the shared five-day window from
-`utils/orderHistory.ts`: Shoptet `date >= now - 5 days`, including the exact cutoff.
-This applies to uncertain-reference lookups/retries, unknown shortage reconciliation, and status
-checks for `100`, `300`, and `301`. It does not limit new order submission,
+Retrospective order checks use windows from `utils/orderHistory.ts`, including the exact cutoff:
+uncertain-reference lookups/retries and unknown shortage reconciliation use Shoptet
+`date >= now - 5 days`; status checks for `100`, `300`, and `301` use `date >= now - 3 days`.
+Neither limits new order submission,
 table history, or the Shoptet import checkpoint. Older records remain stored and visible;
 retrospective checks leave them untouched. References and statuses are not cleared.
 Saved requests whose complete membership is no longer inside the window are skipped with a safe
@@ -362,15 +362,23 @@ matching `Authorization: Bearer <CRON_SECRET>` header are required; otherwise th
 returns HTTP 401 without executing operations. An authorized run performs:
 
 1. Import the CZ/SK Shoptet feeds.
-2. Reconcile and submit orders only if the import returned `success`; otherwise mark this step `skipped`.
-3. Check ordered products with status `100` whose Shoptet order date is within the last five days (including the cutoff).
-4. Check both aggregated/completing states `300` and `301` within the same five-day window.
+2. Submit new orders only if the import returned `success`; otherwise mark this step `skipped`.
+   Uncertain/unknown-quantity references are looked up and retried only in the 30-minute slots
+   (Europe/Prague minutes `:00`–`:09` and `:30`–`:39`); other runs only submit new products.
+3. Only in the 30-minute slots: check ordered products with status `100` whose Shoptet order date is within the last three days (including the cutoff); otherwise `skipped`.
+4. Only in the three-hourly full sweep: check every aggregated/completing `300`/`301` group within the same three-day window (otherwise `skipped`).
 
-Both status passes run even if an earlier operation returns an error or throws. The cron waits
-2.5 seconds after the new-order status pass before starting the aggregated-order status pass,
-including when the first pass fails or has no groups. This pause does not coordinate concurrent runs.
+`utils/cronPlan.ts` derives the slots from the run time; a delayed delivery outside its 10-minute
+window waits for the next slot. Runs outside the slots only import and submit new products, without
+Kontri status lookups. Scheduled status passes run even if an earlier operation returns an error
+or throws. Steps run back to back: every Kontri request (SOAP WSDL/calls in `utils/soapClient.ts`
+and the order POST in `actions/sendOrder.ts`) goes through `utils/kontriThrottle.ts`, which keeps
+at least 2200 ms between the end of one response and the next request (Kontri allows one request
+per 2000 ms). The limiter serializes requests within one server instance and releases the queue if a
+request hangs for 60 s; it does not coordinate
+concurrent runs on different instances. The SOAP client and its WSDL are loaded once per instance.
 The response
-contains `status`, `message`, and `results` with `feeds`, `sendOrders`, `newOrders`, and
+contains `status`, `message`, `plan` (`checks`, `fullSweep`), and `results` with `feeds`, `sendOrders`, `newOrders`, and
 `aggregatedOrders`. Each result retains its operation status/message. Status-check results
 also include `checkedCount` (attempted reference groups) and `failedCount` (failed groups plus
 products without a reference, or one failure if product retrieval fails). A failed step or
@@ -379,13 +387,19 @@ result, including no new orders or required manual quantity review, is not treat
 The JSON results must still be inspected for operational warnings. Thrown exceptions are not
 included in the response. The endpoint no longer reports successful submission unconditionally.
 
-Status `100`, `300`, and `301` queries use `date >= now - 5 days`, ordered by date and then
+Status `100`, `300`, and `301` queries use `date >= now - 3 days`, ordered by date and then
 document ID; this is the Shoptet order date, not the Kontri submission time. Older products
 are intentionally no longer checked, even if they were submitted recently. Both queries load all 1000-document pages within
 their filters before grouping by `RefNumber`; the page size is not a total product cap.
 The status queries require the corresponding Firestore status/date indexes.
-Status checks wait 2.5 seconds between
-groups, continue after unchanged states or failures, and require API result code `200` and a
+The status `100` pass processes groups oldest first and stops at the first group Kontri confirms
+unchanged (same status or `Nowe`), as the pre-October version did; this assumes Kontri processes
+new orders in order. Failed lookups and failed writes do not stop a pass. Every three hours
+(Europe/Prague 00:00, 03:00, … in the `:00`–`:09` run) a full sweep checks all status `100` groups
+and runs the aggregated pass. The aggregated pass always checks every `300`/`301` group: Kontri
+sends an unpredictable one of the aggregated orders and others can remain `300`/`301` permanently,
+so order-based stopping does not apply. Groups already at the computed state are not rewritten. Results report checked/total groups and an
+early stop. Checks require API result code `200` and a
 recognized status before writing. Unknown/missing statuses and API errors leave that group's
 data unchanged and are counted as failures. A `Nowe` response does not regress an aggregated
 order to `100`. The existing article-count heuristic for states `300`/`301` is retained; it is

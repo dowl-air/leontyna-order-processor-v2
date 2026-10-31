@@ -1,9 +1,12 @@
 "use server";
 import { createClient, BasicAuthSecurity, Client } from "soap";
+import { withKontriSpacing } from "./kontriThrottle";
 
 const url = "https://api.kontri.pl:8866/KontriAPIservice.svc?wsdl";
 const username = process.env.KONTRI_API_USER!;
 const password = process.env.KONTRI_API_PASSWORD!;
+
+let clientPromise: Promise<Client> | null = null;
 
 function createClient_(): Promise<Client> {
     return new Promise((resolve, reject) => {
@@ -22,38 +25,40 @@ function createClient_(): Promise<Client> {
     });
 }
 
-export async function checkService(): Promise<any> {
-    const client = await createClient_();
-    return new Promise((resolve, reject) => {
-        client.CheckStatus({}, (err: any, result: any) => {
-            if (err) {
-                return reject(err);
-            }
-            resolve(result);
+// The WSDL download is a Kontri request too, so it is loaded once per instance and spaced like other calls.
+function getClient(): Promise<Client> {
+    if (!clientPromise) {
+        clientPromise = withKontriSpacing(createClient_);
+        clientPromise.catch(() => {
+            clientPromise = null;
         });
-    });
+    }
+    return clientPromise;
+}
+
+async function call(method: string, args: object): Promise<any> {
+    const client = await getClient();
+    return withKontriSpacing(
+        () =>
+            new Promise((resolve, reject) => {
+                client[method](args, (err: any, result: any) => {
+                    if (err) {
+                        return reject(err);
+                    }
+                    resolve(result);
+                });
+            }),
+    );
+}
+
+export async function checkService(): Promise<any> {
+    return call("CheckStatus", {});
 }
 
 export async function getOrderStatus(altumOrderID: string) {
-    const client = await createClient_();
-    return new Promise((resolve, reject) => {
-        client.GetOrderStatus({ AltumOrderID: altumOrderID }, (err: any, result: any) => {
-            if (err) {
-                return reject(err);
-            }
-            resolve(result);
-        });
-    });
+    return call("GetOrderStatus", { AltumOrderID: altumOrderID });
 }
 
 export async function getOrderStatusByRefNumber(RefNumber: string) {
-    const client = await createClient_();
-    return new Promise((resolve, reject) => {
-        client.GetOrderStatusByRefNumber({ RefNumber }, (err: any, result: any) => {
-            if (err) {
-                return reject(err);
-            }
-            resolve(result);
-        });
-    });
+    return call("GetOrderStatusByRefNumber", { RefNumber });
 }
