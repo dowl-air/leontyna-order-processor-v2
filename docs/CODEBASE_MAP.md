@@ -90,7 +90,7 @@ in `app/api/cron/kontri-feed/route.test.ts`. It never invokes order import/submi
 `vercel.json` schedules `GET /api/cron` every ten minutes. `app/api/cron/route.ts` compares the request's `Authorization` header with `Bearer ${CRON_SECRET}`. An authorized request sequentially runs:
 
 1. `actions/feedsDownload.ts` finds the latest stored product date, requests both Shoptet CSV feeds with that update time, and skips rows when a present item type is not `product`, a present item code does not start with `AK`, or a present supplier is not `Kontri.pl`; accepted rows are passed to `db/addProduct.ts`.
-2. If import returned `success`, `actions/triggerOrdersSend.ts` looks up unconfirmed/historical references and retries unverified groups with their preserved references. Stored payloads replay unchanged; old groups without payloads migrate once to current mapping. Failed retries stop new submission; otherwise at most one new mapped order is prepared and sent. An unsuccessful import marks this entire step `skipped`.
+2. If import returned `success`, `actions/triggerOrdersSend.ts` looks up unconfirmed/historical references and retries unverified groups with their preserved references. Stored payloads replay unchanged; old groups without payloads migrate once to current mapping. Failed retries are counted per group (`db/recordKontriRetryFailure.ts`, status `120` after three) and do not stop other groups; new submission after a counted failure requires a successful Kontri `CheckStatus`. At most one new mapped order is prepared and sent. An unsuccessful import marks this entire step `skipped`.
 3. `actions/updateOrdersState.ts` checks state `100` products from the last five days of the Shoptet order date, including the cutoff, using `actions/checkOrderRefNumber.ts`.
 4. After a 2.5-second pause, the same updater checks aggregated/completing states `300` and `301` inside the same five-day window. The pause also applies after a failed or empty first pass; it does not coordinate concurrent runs.
 
@@ -144,6 +144,7 @@ Statuses written or interpreted in source include:
 | `80`                | Kontri response marks products unavailable (`actions/triggerOrdersSend.ts`).                                  |
 | `90`                | Prepared/uncertain request; later looked up and retried with the same stored payload/reference if unverified. |
 | `110`               | Reference conflict from Kontri; retained for manual review, excluded from automatic retry.                    |
+| `120`               | Manual review after three failed retries; reference/payload retained, excluded from automatic retry.          |
 | `100`               | Submitted/ordered response; includes Kontri order fields and shortage quantity when present.                  |
 | `300`, `301`, `400` | Set by the status updater after SOAP status checks; specific mapping is in `actions/updateOrdersState.ts`.    |
 

@@ -45,6 +45,17 @@ describe("getUnconfirmedOrders", () => {
         expect(groups[0].products.map((product) => product.fID)).toEqual(["first", "legacy"]);
         expect(groups[0]).not.toHaveProperty("OrderedItems");
     });
+    it("excludes a group in manual review from automatic retries", async () => {
+        mocks.getDocs.mockResolvedValueOnce({ docs: [document("active", { RefNumber: "active", AltumOrderID: "active", kontriStatusCode: 90 })] });
+        mocks.getDocs.mockResolvedValueOnce({
+            docs: [
+                document("review", { RefNumber: "review", AltumOrderID: null, kontriStatusCode: 120 }),
+                document("member", { RefNumber: "review", AltumOrderID: null }),
+            ],
+        });
+        const groups = await getUnconfirmedOrders();
+        expect(groups.map((group) => group.RefNumber)).toEqual(["active"]);
+    });
     it("rejects an uncertain order without a reference rather than inventing one", async () => {
         mocks.getDocs.mockResolvedValueOnce({ docs: [document("bad", { kontriStatusCode: 90 })] });
         mocks.getDocs.mockResolvedValueOnce({ docs: [] });

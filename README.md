@@ -310,8 +310,15 @@ order was not created. No-write results send no shortage email; SMTP failure ret
 shortages and reports a delivery warning. No historical backfill or retry-policy change is included.
 Code `80` still returns an error result because the order was not created.
 Other errors and timeouts retain status `90` for a later
-attempt and send safe error notifications. A failed retry stops new submission in that run;
-queued retries can coexist with new orders, and the combined result remains `info`.
+attempt and send safe error notifications. Local transport failures use code `-1`, distinct from
+Kontri code `0`. A retry ending in such an error records `kontriRetryFailures` and
+`kontriLastErrorCode` on the group in one transaction (only while all products keep the reference
+and status `0`/`90`) and the run continues with other groups. The third failure sets status `120` /
+`Ruční kontrola` and sends one escalation email; the group is then excluded from automatic retries,
+keeps its reference, payload and `AltumOrderID`, and needs manual resolution with Kontri. After
+a counted failure, new products are submitted only if Kontri `CheckStatus` responds with a
+nonempty result; otherwise new submission stops for that run. Any failure keeps the step `error`.
+Queued retries can coexist with new orders, and the combined result remains `info`.
 Do not clear references automatically: an old or queued request may already exist at Kontri.
 
 The full Firestore SDK is used for preparation and result transactions; product imports and

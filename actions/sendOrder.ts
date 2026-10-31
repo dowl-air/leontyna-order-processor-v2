@@ -22,6 +22,6 @@ export const sendOrder = async (orderObject: KontriOrderToSend) => {
         return result;
     } catch (error) {
         logKontriError("submit", orderObject.RefNumber, error);
-        return { Code: 0, Message: "Error while sending order." };
+        return { Code: -1, Message: "Error while sending order." };
     }
 };

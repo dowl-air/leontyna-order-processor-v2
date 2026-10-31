@@ -4,6 +4,7 @@ import { db } from "./init";
 import ShopOrder from "@/types/ShopOrder";
 import { formatToUTC } from "@/utils/formatDate";
 import { getOrderHistoryCutoff } from "@/utils/orderHistory";
+import { KONTRI_MANUAL_REVIEW_STATUS } from "./recordKontriRetryFailure";
 
 export type UnconfirmedKontriOrder = { RefNumber: string; products: ShopOrder[] };
 
@@ -32,6 +33,10 @@ export const getUnconfirmedOrders = async (): Promise<UnconfirmedKontriOrder[]> 
     }
     return [...groups]
         .filter(([RefNumber, products]) => {
+            if (products.some((product) => product.kontriStatusCode === KONTRI_MANUAL_REVIEW_STATUS)) {
+                console.warn("Kontri request excluded: manual review required", { refNumber: RefNumber });
+                return false;
+            }
             if (!products.some((product) => product.kontriRequestLeaderId || product.kontriRequestJson)) return true;
             const leaders = products.filter((product) => product.kontriRequestJson);
             const ids = leaders[0]?.kontriRequestProductIds;

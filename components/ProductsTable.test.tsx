@@ -75,6 +75,21 @@ describe("ProductsTable shortage certainty", () => {
         expect(html).toContain('aria-label="Zobrazit Kontri mapování AK-5-100"');
         expect(html).not.toContain("Dotaz [Referenční číslo]");
     });
+    it("shows manual review with the last Kontri code and keeps only the reference lookup", () => {
+        vi.stubGlobal("React", React);
+        const review = {
+            ...product,
+            AltumOrderID: "stable",
+            kontriStatusCode: 120,
+            kontriStatusName: "Ruční kontrola",
+            kontriLastErrorCode: 0,
+            kontriReconciliationRequired: true,
+        };
+        const html = renderToStaticMarkup(<ProductsTable initialShopOrders={[review]} />);
+        expect(html).toMatch(/badge badge-error" title="Poslední kód Kontri: 0">Ruční kontrola/);
+        expect(html).toContain("Dotaz [Referenční číslo]");
+        expect(html).not.toContain("Dotaz [Kontri ID]");
+    });
 });
 
 describe("ProductsTable pagination", () => {

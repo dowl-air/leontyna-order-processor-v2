@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => ({
     persist: vi.fn(),
     mail: vi.fn(),
     check: vi.fn(),
+    recordFailure: vi.fn(),
+    service: vi.fn(),
 }));
 vi.mock("@/db/getNewOrder", () => ({ getNewOrder: mocks.newOrder, prepareKontriRetry: mocks.retry }));
 vi.mock("@/db/getUnconfirmedOrders", () => ({ getUnconfirmedOrders: mocks.pending }));
@@ -18,6 +20,8 @@ vi.mock("@/db/persistKontriProducts", () => ({ persistKontriProducts: mocks.pers
 vi.mock("./sendOrder", () => ({ sendOrder: mocks.send }));
 vi.mock("./sendMail", () => ({ sendMail: mocks.mail }));
 vi.mock("./checkOrderRefNumber", () => ({ checkOrderByRefNumber: mocks.check }));
+vi.mock("@/db/recordKontriRetryFailure", () => ({ KONTRI_RETRY_FAILURE_LIMIT: 3, recordKontriRetryFailure: mocks.recordFailure }));
+vi.mock("@/utils/soapClient", () => ({ checkService: mocks.service }));
 import { sendOrders } from "./triggerOrdersSend";
 
 const products = [
@@ -56,6 +60,8 @@ describe("sendOrders with persisted mapping", () => {
             return true;
         });
         mocks.mail.mockResolvedValue({ messageId: "mock" });
+        mocks.recordFailure.mockResolvedValue({ failures: 1, escalated: false });
+        mocks.service.mockResolvedValue({ CheckStatusResult: "OK" });
         mocks.send.mockResolvedValue({
             Code: 100,
             AltumOrderID: "123",
@@ -268,14 +274,88 @@ describe("sendOrders with persisted mapping", () => {
         expect(mocks.mail).toHaveBeenCalledOnce();
         expect(mocks.mail).toHaveBeenCalledWith(expect.objectContaining({ subject: "[Kontri objednávky] Nedostatky" }));
     });
-    it("retries after a thrown lookup and stops without replacing a conflicting reference", async () => {
+    it("retries after a thrown lookup and keeps a conflicting reference without counting a retry failure", async () => {
         mocks.pending.mockResolvedValue([{ RefNumber: "stable", products }]);
+        mocks.newOrder.mockResolvedValue(null);
         mocks.check.mockRejectedValue(new Error("network"));
         mocks.send.mockResolvedValue({ Code: 110 });
         expect((await run()).status).toBe("error");
         expect(mocks.send).toHaveBeenCalledOnce();
-        expect(mocks.newOrder).not.toHaveBeenCalled();
+        expect(mocks.newOrder).toHaveBeenCalledOnce();
+        expect(mocks.recordFailure).not.toHaveBeenCalled();
+        expect(mocks.service).not.toHaveBeenCalled();
         expect(mocks.update).toHaveBeenCalledWith(products[0], expect.objectContaining({ kontriStatusCode: 110 }));
+        expect(mocks.mail).toHaveBeenCalledOnce();
+    });
+    it("records a failed retry and still submits new products when the Kontri service responds", async () => {
+        const other = products.map((product) => ({ ...product, RefNumber: "other" }));
+        mocks.pending.mockResolvedValue([
+            { RefNumber: "stable", products },
+            { RefNumber: "other", products: other },
+        ]);
+        mocks.check.mockResolvedValue({ Code: 0, Message: "Error connecting to database." });
+        mocks.retry.mockImplementation(async (group: ShopOrder[], refNumber: string) => createKontriOrder(group, refNumber));
+        mocks.send
+            .mockResolvedValueOnce({ Code: 0, Message: "Error connecting to database." })
+            .mockResolvedValueOnce({ Code: 0, Message: "Error connecting to database." })
+            .mockResolvedValueOnce({ Code: 100, AltumOrderID: "123", Shortages: { Shortages: [] } });
+        const result = await run();
+        expect(result.status).toBe("error");
+        expect(mocks.send).toHaveBeenCalledTimes(3);
+        expect(mocks.send.mock.calls[2][0].RefNumber).toBe("stable");
+        expect(mocks.newOrder).toHaveBeenCalledOnce();
+        expect(mocks.recordFailure).toHaveBeenCalledWith(products, "stable", 0);
+        expect(mocks.recordFailure).toHaveBeenCalledWith(other, "other", 0);
+        expect(mocks.service).toHaveBeenCalledOnce();
+        expect(result.message).toContain("Neúspěšný pokus 1/3");
+        expect(result.message).toContain("byla potvrzena (123)");
+        expect(mocks.mail).toHaveBeenCalledTimes(2);
+    });
+    it.each([null, { CheckStatusResult: "" }, new Error("down")])(
+        "blocks new submission after a failed retry when the service check fails (%s)",
+        async (service) => {
+            mocks.pending.mockResolvedValue([{ RefNumber: "stable", products }]);
+            mocks.check.mockResolvedValue({ Code: 0 });
+            mocks.send.mockResolvedValue({ Code: 0 });
+            if (service instanceof Error) mocks.service.mockRejectedValue(service);
+            else mocks.service.mockResolvedValue(service);
+            const result = await run();
+            expect(result.status).toBe("error");
+            expect(result.message).toContain("nové produkty nebyly odeslány");
+            expect(mocks.newOrder).not.toHaveBeenCalled();
+            expect(mocks.send).toHaveBeenCalledOnce();
+        },
+    );
+    it("escalates to manual review on the limit with a dedicated email", async () => {
+        mocks.pending.mockResolvedValue([{ RefNumber: "stable", products }]);
+        mocks.newOrder.mockResolvedValue(null);
+        mocks.check.mockResolvedValue({ Code: 0 });
+        mocks.send.mockResolvedValue({ Code: 0 });
+        mocks.recordFailure.mockResolvedValue({ failures: 3, escalated: true });
+        const result = await run();
+        expect(result.status).toBe("error");
+        expect(result.message).toContain("převedena na ruční kontrolu");
+        expect(mocks.mail).toHaveBeenCalledOnce();
+        expect(mocks.mail).toHaveBeenCalledWith(expect.objectContaining({ subject: "[Kontri objednávky] Ruční kontrola" }));
+        expect(mocks.newOrder).toHaveBeenCalledOnce();
+    });
+    it("reports an unrecorded retry failure without blocking other work", async () => {
+        mocks.pending.mockResolvedValue([{ RefNumber: "stable", products }]);
+        mocks.newOrder.mockResolvedValue(null);
+        mocks.check.mockResolvedValue({ Code: 0 });
+        mocks.send.mockResolvedValue({ Code: -1 });
+        mocks.recordFailure.mockRejectedValue(new Error("commit failed"));
+        const result = await run();
+        expect(result.status).toBe("error");
+        expect(result.message).toContain("Počet neúspěšných pokusů se nepodařilo zapsat");
+        expect(mocks.newOrder).toHaveBeenCalledOnce();
+    });
+    it("does not count a failed first submission as a retry failure", async () => {
+        mocks.send.mockResolvedValue({ Code: 0 });
+        const result = await run();
+        expect(result.status).toBe("error");
+        expect(result).not.toHaveProperty("retryableCode");
+        expect(mocks.recordFailure).not.toHaveBeenCalled();
         expect(mocks.mail).toHaveBeenCalledOnce();
     });
     it("replays after a timeout on a later run when lookup still cannot find the request", async () => {
@@ -295,13 +375,17 @@ describe("sendOrders with persisted mapping", () => {
         mocks.newOrder.mockResolvedValue(null);
         expect((await run()).status).toBe("info");
         expect(mocks.mail).not.toHaveBeenCalled();
+        expect(mocks.recordFailure).not.toHaveBeenCalled();
     });
     it("does not confirm a status response missing the real Kontri order ID", async () => {
         mocks.pending.mockResolvedValue([{ RefNumber: "old", products }]);
         mocks.check.mockResolvedValue({ Code: 200 });
+        mocks.newOrder.mockResolvedValue(null);
         expect((await run()).status).toBe("error");
         expect(mocks.update).not.toHaveBeenCalled();
         expect(mocks.send).not.toHaveBeenCalled();
+        expect(mocks.retry).not.toHaveBeenCalled();
+        expect(mocks.newOrder).toHaveBeenCalledOnce();
     });
     it("does not persist a success response with unmatched shortage IDs", async () => {
         mocks.send.mockResolvedValue({ Code: 100, AltumOrderID: "123", Shortages: { Shortages: [{ AltumArticleID: 100, Quantity: 1 }] } });

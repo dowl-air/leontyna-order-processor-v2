@@ -26,6 +26,8 @@ type ShopOrder = {
     kontriRequestProductIds?: string[];
     kontriRequestLeaderId?: string;
     kontriReconciliationRequired?: boolean;
+    kontriRetryFailures?: number;
+    kontriLastErrorCode?: number;
 };
 
 export default ShopOrder;

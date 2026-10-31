@@ -306,6 +306,11 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
                                                 {order.kontriStatusCode === 80 ? (
                                                     <div className="badge badge-error">{order.kontriStatusName}</div>
                                                 ) : null}
+                                                {order.kontriStatusCode === 120 ? (
+                                                    <div className="badge badge-error" title={`Poslední kód Kontri: ${order.kontriLastErrorCode ?? "neznámý"}`}>
+                                                        {order.kontriStatusName}
+                                                    </div>
+                                                ) : null}
                                                 {order.kontriStatusCode === 90 ? (
                                                     <div className="badge badge-warning">{order.kontriStatusName}</div>
                                                 ) : null}
@@ -330,7 +335,7 @@ const ProductsTable = ({ initialShopOrders }: { initialShopOrders: ShopOrder[] }
                                                     Dotaz [Referenční číslo]
                                                 </button>
                                             ) : null}
-                                            {order.kontriStatusCode && order.kontriStatusCode >= 100 ? (
+                                            {order.kontriStatusCode && order.kontriStatusCode >= 100 && order.kontriStatusCode !== 120 ? (
                                                 <button
                                                     className="btn btn-primary btn-xs text-nowrap"
                                                     onClick={() => checkOrderStatus(order.AltumOrderID)}

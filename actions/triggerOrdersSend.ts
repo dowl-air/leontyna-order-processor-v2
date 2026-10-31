@@ -11,6 +11,8 @@ import { checkOrderByRefNumber } from "./checkOrderRefNumber";
 import { reconcileKontriShortages } from "@/utils/reconcileKontriShortages";
 import ShopOrder from "@/types/ShopOrder";
 import { logKontriError, logKontriEvent, logKontriResponse } from "@/utils/kontriDiagnostics";
+import { KONTRI_RETRY_FAILURE_LIMIT, recordKontriRetryFailure } from "@/db/recordKontriRetryFailure";
+import { checkService } from "@/utils/soapClient";
 
 async function notifyOrderProblem(message: string, subject = "[Kontri objednávky] Kontrola zpracování") {
     try {
@@ -48,11 +50,38 @@ async function orderError(message: string) {
     return { status: "error", message: message + (await notifyOrderProblem(message)) };
 }
 
+type HandlerResult = { status: string; message: string; retryableCode?: number };
+
+async function kontriServiceAvailable() {
+    try {
+        const result = (await checkService()) as { CheckStatusResult?: unknown } | null;
+        return typeof result?.CheckStatusResult === "string" && !!result.CheckStatusResult.trim();
+    } catch (error) {
+        logKontriError("workflow.serviceCheck", "", error);
+        return false;
+    }
+}
+
+async function recordRetryFailure(products: ShopOrder[], refNumber: string, result: HandlerResult & { retryableCode: number }) {
+    const code = result.retryableCode;
+    const recorded = await recordKontriRetryFailure(products, refNumber, code).catch((error) => {
+        logKontriError("retry.failure.record", refNumber, error);
+        return null;
+    });
+    logKontriEvent("retry.failed", refNumber, { code, failures: recorded?.failures ?? 0, escalated: !!recorded?.escalated });
+    if (recorded?.escalated) {
+        const message = `Kontri objednávka ${refNumber} se nepodařilo potvrdit ani po ${recorded.failures} pokusech (poslední kód ${code}). Byla převedena na ruční kontrolu: automaticky se už nezkouší a neblokuje nové objednávky. Reference a uložený požadavek zůstávají beze změny; vyřešte ji ručně s Kontri.`;
+        return message + (await notifyOrderProblem(message, "[Kontri objednávky] Ruční kontrola"));
+    }
+    const message = `${result.message} ${recorded ? `Neúspěšný pokus ${recorded.failures}/${KONTRI_RETRY_FAILURE_LIMIT}.` : "Počet neúspěšných pokusů se nepodařilo zapsat."}`;
+    return message + (await notifyOrderProblem(message));
+}
+
 function validOrderId(value: unknown) {
     return (typeof value === "string" || typeof value === "number") && /^[1-9]\d*$/.test(String(value));
 }
 
-const sendOrderHandler = async (orderObject: KontriOrder) => {
+const sendOrderHandler = async (orderObject: KontriOrder): Promise<HandlerResult> => {
     try {
         const { products, ...orderReq } = orderObject;
         const refNumber = orderObject.RefNumber;
@@ -146,9 +175,11 @@ const sendOrderHandler = async (orderObject: KontriOrder) => {
                     `Kontri reference ${refNumber} patří jinému požadavku (110). Reference nebyla změněna; konflikt vyžaduje ruční kontrolu.`,
                 );
             default:
-                return orderError(
-                    `Kontri objednávka ${refNumber} nebyla potvrzena (kód ${Number(orderResp.Code)}). Reference a požadavek zůstávají uložené pro další pokus.`,
-                );
+                return {
+                    status: "error",
+                    message: `Kontri objednávka ${refNumber} nebyla potvrzena (kód ${Number(orderResp.Code)}). Reference a požadavek zůstávají uložené pro další pokus.`,
+                    retryableCode: Number(orderResp.Code),
+                };
         }
     } catch (error) {
         logKontriError("submission.handler", orderObject.RefNumber, error);
@@ -163,6 +194,8 @@ export const sendOrders = async () => {
         const messages: string[] = [];
         let retried = false;
         let requiresReviewOrWaiting = false;
+        let failed = false;
+        let retryFailed = false;
         const uncertainOrders = await getUnconfirmedOrders();
         logKontriEvent("workflow.pending", "", { groups: uncertainOrders.length });
         for (const order of uncertainOrders) {
@@ -182,16 +215,28 @@ export const sendOrders = async () => {
                 logKontriEvent("retry.prepared", order.RefNumber, { products: retry.products.length });
                 await new Promise((resolve) => setTimeout(resolve, 2100));
                 const result = await sendOrderHandler(retry);
+                if (result.retryableCode !== undefined) {
+                    failed = true;
+                    retryFailed = true;
+                    messages.push(await recordRetryFailure(retry.products, order.RefNumber, { ...result, retryableCode: result.retryableCode }));
+                    continue;
+                }
                 retried = true;
                 if (result.status === "info") requiresReviewOrWaiting = true;
+                if (result.status === "error") failed = true;
                 messages.push(result.message);
-                if (result.status === "error") return { ...result, message: messages.join(" | ") };
                 continue;
             }
             if (!validOrderId(response!.AltumOrderID)) {
-                return orderError(
-                    `Objednávku ${order.RefNumber} se nepodařilo bezpečně ověřit u Kontri. Žádný nový požadavek nebyl odeslán; je nutná ruční kontrola.`,
+                failed = true;
+                messages.push(
+                    (
+                        await orderError(
+                            `Objednávku ${order.RefNumber} se nepodařilo bezpečně ověřit u Kontri. Žádný nový požadavek pro ni nebyl odeslán; je nutná ruční kontrola.`,
+                        )
+                    ).message,
                 );
+                continue;
             }
             let rejectionDetail = "";
             const shortages = reconcileKontriShortages(order.products, order.RefNumber, response!, (diagnostic) => {
@@ -236,19 +281,29 @@ export const sendOrders = async () => {
                 requiresReviewOrWaiting = true;
             }
         }
+        if (retryFailed) {
+            await new Promise((resolve) => setTimeout(resolve, 2100));
+            if (!(await kontriServiceAvailable())) {
+                logKontriEvent("workflow.blocked", "", { reason: "serviceUnavailable" });
+                messages.push("Kontri neodpovědělo na kontrolu stavu služby; nové produkty nebyly odeslány.");
+                return { status: "error", message: messages.join(" | ") };
+            }
+        }
         const order = await getNewOrder();
         logKontriEvent("workflow.prepared", order?.RefNumber ?? "", { products: order?.products.length ?? 0 });
         if (order) {
             await new Promise((resolve) => setTimeout(resolve, 2100));
-            const result = await sendOrderHandler(order);
+            const handled = await sendOrderHandler(order);
+            const { retryableCode, ...result } =
+                handled.retryableCode !== undefined ? { ...handled, message: handled.message + (await notifyOrderProblem(handled.message)) } : handled;
             return {
                 ...result,
-                status: result.status === "success" && requiresReviewOrWaiting ? "info" : result.status,
+                status: failed ? "error" : result.status === "success" && requiresReviewOrWaiting ? "info" : result.status,
                 message: [...messages, result.message].join(" | "),
             };
         }
         return {
-            status: retried && !requiresReviewOrWaiting ? "success" : "info",
+            status: failed ? "error" : retried && !requiresReviewOrWaiting ? "success" : "info",
             message: messages.join(" | ") || "Žádné nové produkty k odeslání.",
         };
     } catch (error) {
